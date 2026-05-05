@@ -802,37 +802,6 @@
 
           <!-- Manage Content Tab -->
           <div id="tab-content" class="tab-content">
-            <div class="settings-section">
-              <h3>Client Diagnostics</h3>
-              <p class="hint">View active clients and what screen/playback state they currently report.</p>
-              <div class="setting-item" style="gap: var(--space-sm);">
-                <button class="btn btn-sm btn-secondary" id="refresh-diagnostics">Refresh Clients</button>
-                <span id="diagnostics-summary" class="hint">No diagnostics loaded yet.</span>
-              </div>
-              <div id="diagnostics-client-list" class="diagnostics-client-list">
-                <p class="hint">No client snapshots yet.</p>
-              </div>
-            </div>
-
-            <div class="settings-section">
-              <h3>Content Pack</h3>
-              <p class="hint">Export sources, hidden items, favorites, and settings to replicate this setup on another user.</p>
-              <div class="setting-item" style="gap: var(--space-sm); flex-wrap: wrap;">
-                <button class="btn btn-sm btn-primary" id="export-content-pack">Export Content Pack</button>
-                <button class="btn btn-sm btn-secondary" id="import-content-pack">Import Content Pack</button>
-                <label style="display:flex;align-items:center;gap:8px;">
-                  <input type="checkbox" id="content-import-merge" checked>
-                  <span class="hint">Merge instead of replace</span>
-                </label>
-                <label style="display:flex;align-items:center;gap:8px;">
-                  <input type="checkbox" id="content-import-settings" checked>
-                  <span class="hint">Include settings</span>
-                </label>
-              </div>
-              <input type="file" id="content-pack-file" accept="application/json" style="display:none;">
-              <p id="content-pack-status" class="hint">Content pack tools are ready.</p>
-            </div>
-
             <div class="content-browser">
               <div class="content-browser-header">
                 <div class="content-type-toggle">

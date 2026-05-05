@@ -1,6 +1,6 @@
 {
     "name": "calibreviewer",
-    "version": "3.0.9",
+    "version": "3.0.10",
     "description": "Modern IPTV Player",
     "license": "GPL-3.0-only",
     "main": "server/index.js",
@@ -8,6 +8,7 @@
         "start": "node server/index.js",
         "dev": "node --watch server/index.js",
         "desktop": "electron electron/main.js",
+        "desktop:assist": "electron electron/assist-main.js",
         "desktop:dev": "cross-env NODE_ENV=development electron electron/main.js",
         "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
         "postinstall": "electron-builder install-app-deps",
