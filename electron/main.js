@@ -145,6 +145,37 @@ function normalizeVersionString(value) {
     return parsed.join('.');
 }
 
+async function fetchGithubPackageVersion(repo, headers) {
+    const branches = ['main', 'master'];
+
+    for (const branch of branches) {
+        const url = `https://api.github.com/repos/${repo}/contents/package.json?ref=${branch}`;
+        const response = await fetch(url, { headers });
+        if (!response.ok) continue;
+
+        const payload = await response.json();
+        const encoded = payload?.content;
+        if (!encoded) continue;
+
+        try {
+            const content = Buffer.from(String(encoded).replace(/\n/g, ''), 'base64').toString('utf8');
+            const pkg = JSON.parse(content);
+            const version = normalizeVersionString(pkg?.version);
+            if (!version) continue;
+
+            return {
+                version,
+                branch,
+                url: `https://github.com/${repo}/blob/${branch}/package.json`
+            };
+        } catch {
+            // ignore malformed package file and continue
+        }
+    }
+
+    return null;
+}
+
 async function fetchGithubUpdateInfo(repo) {
     const headers = {
         'User-Agent': `${APP_NAME}/${app.getVersion()}`,
@@ -173,44 +204,55 @@ async function fetchGithubUpdateInfo(repo) {
         }
     }
 
+    let tagsError = null;
     const tagsUrl = `https://api.github.com/repos/${repo}/tags?per_page=20`;
     const tagsResponse = await fetch(tagsUrl, { headers });
 
-    if (!tagsResponse.ok) {
-        throw new Error(`GitHub API error (${tagsResponse.status})`);
-    }
+    if (tagsResponse.ok) {
+        const tags = await tagsResponse.json();
+        const versions = (Array.isArray(tags) ? tags : [])
+            .map(tag => {
+                const name = tag?.name || '';
+                const normalized = normalizeVersionString(name);
+                const parsed = parseVersion(normalized);
+                if (!normalized || !parsed) return null;
+                return {
+                    latestVersion: normalized,
+                    latestTag: name,
+                    parsed,
+                    releaseUrl: `https://github.com/${repo}/releases/tag/${encodeURIComponent(name)}`
+                };
+            })
+            .filter(Boolean)
+            .sort((a, b) => compareVersions(b.parsed, a.parsed));
 
-    const tags = await tagsResponse.json();
-    if (!Array.isArray(tags) || tags.length === 0) {
-        throw new Error('No tags found in repository');
-    }
-
-    const versions = tags
-        .map(tag => {
-            const name = tag?.name || '';
-            const normalized = normalizeVersionString(name);
-            const parsed = parseVersion(normalized);
-            if (!normalized || !parsed) return null;
+        if (versions.length) {
             return {
-                latestVersion: normalized,
-                latestTag: name,
-                parsed,
-                releaseUrl: `https://github.com/${repo}/releases/tag/${encodeURIComponent(name)}`
+                source: 'tag',
+                ...versions[0],
+                latestFile: null,
+                downloadUrl: versions[0].releaseUrl
             };
-        })
-        .filter(Boolean)
-        .sort((a, b) => compareVersions(b.parsed, a.parsed));
+        }
 
-    if (!versions.length) {
-        throw new Error('No valid semantic version tags found');
+        tagsError = 'No valid semantic version tags found';
+    } else {
+        tagsError = `GitHub API error (${tagsResponse.status})`;
     }
 
-    return {
-        source: 'tag',
-        ...versions[0],
-        latestFile: null,
-        downloadUrl: versions[0].releaseUrl
-    };
+    const pkgFallback = await fetchGithubPackageVersion(repo, headers);
+    if (pkgFallback) {
+        return {
+            source: 'package-json',
+            latestVersion: pkgFallback.version,
+            latestTag: `${pkgFallback.branch}/package.json`,
+            latestFile: 'package.json',
+            downloadUrl: pkgFallback.url,
+            releaseUrl: pkgFallback.url
+        };
+    }
+
+    throw new Error(tagsError || 'No tags or package.json version found in repository');
 }
 
 function findLatestLocalUpdate(folderPath) {
