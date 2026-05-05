@@ -1,4 +1,5 @@
-const { app, BrowserWindow, dialog, Menu } = require('electron');
+const { app, BrowserWindow, Menu } = require('electron');
+const path = require('path');
 
 const APP_NAME = 'CalibreViewer Assist';
 const DEFAULT_TARGET_PORT = Number(process.env.CALIBREVIEWER_PORT || process.env.PORT || 38400);
@@ -18,21 +19,20 @@ function createAssistWindow() {
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
-            sandbox: true
+            sandbox: true,
+            webSecurity: false
         }
     });
 
     Menu.setApplicationMenu(null);
     assistWindow.setMenuBarVisibility(false);
 
-    assistWindow.webContents.on('did-fail-load', () => {
-        dialog.showErrorBox(
-            'Assist Connection Error',
-            `${APP_NAME} could not connect to ${ASSIST_TARGET_URL}.\n\nStart CalibreViewer first, then relaunch Assist.`
-        );
+    const localAssistHtml = path.join(__dirname, '..', 'public', 'assist.html');
+    assistWindow.loadFile(localAssistHtml, {
+        query: {
+            target: ASSIST_TARGET_URL
+        }
     });
-
-    assistWindow.loadURL(`${ASSIST_TARGET_URL}/assist.html`);
 }
 
 app.whenReady().then(() => {

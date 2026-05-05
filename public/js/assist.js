@@ -1,4 +1,8 @@
 (function () {
+    const targetUrlInput = document.getElementById('assist-target-url');
+    const saveTargetBtn = document.getElementById('assist-save-target');
+    const targetStatusEl = document.getElementById('assist-target-status');
+
     const usernameInput = document.getElementById('assist-username');
     const passwordInput = document.getElementById('assist-password');
     const accessPasswordInput = document.getElementById('assist-access-password');
@@ -23,11 +27,16 @@
 
     const USER_STORAGE = 'assistConsoleUser';
     const SESSION_STORAGE = 'assistConsoleSessionToken';
+    const TARGET_STORAGE = 'assistConsoleTargetUrl';
     let pollTimer = null;
     let sessionToken = localStorage.getItem(SESSION_STORAGE) || '';
     let cachedClients = [];
 
+    const initialQueryTarget = new URLSearchParams(window.location.search).get('target') || '';
+    let apiBaseUrl = String(localStorage.getItem(TARGET_STORAGE) || initialQueryTarget || 'http://127.0.0.1:38400').trim().replace(/\/+$/, '');
+
     usernameInput.value = localStorage.getItem(USER_STORAGE) || '';
+    targetUrlInput.value = apiBaseUrl;
 
     function setStatus(message, isError) {
         statusEl.textContent = message;
@@ -37,6 +46,24 @@
     function setPasswordStatus(message, isError) {
         passwordStatusEl.textContent = message;
         passwordStatusEl.style.color = isError ? 'var(--color-error)' : '';
+    }
+
+    function setTargetStatus(message, isError) {
+        targetStatusEl.textContent = message;
+        targetStatusEl.style.color = isError ? 'var(--color-error)' : '';
+    }
+
+    function normalizeTargetUrl(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+
+        try {
+            const parsed = new URL(raw.startsWith('http') ? raw : `http://${raw}`);
+            if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+            return parsed.toString().replace(/\/+$/, '');
+        } catch {
+            return '';
+        }
     }
 
     function setMigrateStatus(message, isError) {
@@ -61,7 +88,7 @@
             requestOptions.body = JSON.stringify(options.body);
         }
 
-        const response = await fetch(path, requestOptions);
+        const response = await fetch(`${apiBaseUrl}${path}`, requestOptions);
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok) {
@@ -151,7 +178,7 @@
         connectBtn.textContent = 'Logging in...';
 
         try {
-            const response = await fetch('/api/assist/login', {
+            const response = await fetch(`${apiBaseUrl}/api/assist/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -294,6 +321,20 @@
         }
     }
 
+    function saveTargetUrl() {
+        const normalized = normalizeTargetUrl(targetUrlInput.value);
+        if (!normalized) {
+            setTargetStatus('Enter a valid URL (example: http://127.0.0.1:38400).', true);
+            return;
+        }
+
+        apiBaseUrl = normalized;
+        targetUrlInput.value = normalized;
+        localStorage.setItem(TARGET_STORAGE, normalized);
+        setTargetStatus(`Target set to ${normalized}`);
+        setStatus('Target saved. Login to connect.');
+    }
+
     connectBtn.addEventListener('click', loginAssist);
     logoutBtn.addEventListener('click', logoutAssist);
     refreshBtn.addEventListener('click', refreshClients);
@@ -303,6 +344,7 @@
     importBtn.addEventListener('click', () => importFile.click());
     importFile.addEventListener('change', () => importContentPack(importFile.files?.[0]));
     savePasswordBtn.addEventListener('click', saveAssistPassword);
+    saveTargetBtn.addEventListener('click', saveTargetUrl);
 
     if (sessionToken) {
         setStatus('Restoring session...');
