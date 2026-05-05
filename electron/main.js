@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, dialog, Menu, powerSaveBlocker } = require('electron');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
 const path = require('path');
@@ -7,8 +7,12 @@ const fs = require('fs');
 const APP_NAME = 'CalibreViewer';
 const APP_ID = 'com.calibreviewer.desktop';
 
-// In development (running `electron electron/main.js`) the default app name is "Electron".
-// Set identity early so userData and Windows AppUserModelId are correct.
+// Prevent Chromium from suspending the renderer process when the window is
+// occluded or moved to the background, which causes media to stop playing.
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 try {
     app.setName(APP_NAME);
     app.setAppUserModelId(APP_ID);
@@ -20,9 +24,12 @@ let serverHandle;
 let quitting = false;
 let ipcRegistered = false;
 let splashWindow;
+let powerSaveBlockerId = null;
 
 const UPDATE_CONFIG_FILE = 'local-update.json';
 const DEFAULT_GITHUB_REPO = 'calibrenyc/Calibreviewer';
+const USER_DATA_FOLDER_NAME = 'calibreviewer';
+const DEFAULT_DESKTOP_PORT = 38400;
 
 function parseVersion(version) {
     if (!version) return null;
@@ -205,7 +212,7 @@ function writeUpdateConfig(partial) {
 }
 
 function getDefaultUpdateFolder() {
-    return path.join(app.getPath('downloads'), 'CalibreViewerUpdates');
+    return path.join(app.getPath('userData'), 'updates');
 }
 
 function getLocalUpdateFolder() {
@@ -314,24 +321,56 @@ async function fetchGithubUpdateInfo(repo) {
         'Accept': 'application/vnd.github+json'
     };
 
+    const mapRelease = (payload) => {
+        if (!payload) return null;
+
+        const latestVersion = normalizeVersionString(payload.tag_name || payload.name);
+        if (!latestVersion) return null;
+
+        const parsed = parseVersion(latestVersion);
+        if (!parsed) return null;
+
+        const windowsAsset = Array.isArray(payload.assets)
+            ? payload.assets.find(asset => /\.(exe|msi)$/i.test(asset?.name || ''))
+            : null;
+
+        return {
+            parsed,
+            latestVersion,
+            latestTag: payload.tag_name || `v${latestVersion}`,
+            latestFile: windowsAsset?.name || null,
+            downloadUrl: windowsAsset?.browser_download_url || payload.html_url || null,
+            releaseUrl: payload.html_url || null
+        };
+    };
+
     const latestReleaseUrl = `https://api.github.com/repos/${repo}/releases/latest`;
     const latestResponse = await fetch(latestReleaseUrl, { headers });
 
     if (latestResponse.ok) {
         const payload = await latestResponse.json();
-        const latestVersion = normalizeVersionString(payload.tag_name || payload.name);
-        if (latestVersion) {
-            const windowsAsset = Array.isArray(payload.assets)
-                ? payload.assets.find(asset => /\.(exe|msi)$/i.test(asset?.name || ''))
-                : null;
-
+        const mapped = mapRelease(payload);
+        if (mapped) {
             return {
                 source: 'release',
-                latestVersion,
-                latestTag: payload.tag_name || `v${latestVersion}`,
-                latestFile: windowsAsset?.name || null,
-                downloadUrl: windowsAsset?.browser_download_url || payload.html_url || null,
-                releaseUrl: payload.html_url || null
+                ...mapped
+            };
+        }
+    }
+
+    const releasesUrl = `https://api.github.com/repos/${repo}/releases?per_page=20`;
+    const releasesResponse = await fetch(releasesUrl, { headers });
+    if (releasesResponse.ok) {
+        const releases = await releasesResponse.json();
+        const candidates = (Array.isArray(releases) ? releases : [])
+            .map(mapRelease)
+            .filter(Boolean)
+            .sort((a, b) => compareVersions(b.parsed, a.parsed));
+
+        if (candidates.length) {
+            return {
+                source: 'release-list',
+                ...candidates[0]
             };
         }
     }
@@ -577,25 +616,44 @@ function registerDesktopIpc() {
 }
 
 function configureUserDataPath() {
-    // Pick a stable per-user folder for app data.
-    // Also supports migration from older app names.
+    // Persist all app state (DB, localStorage, settings, auth cache) in Documents/calibreviewer
+    // so data survives rebuilds/reinstalls and stays easy for users to back up.
     try {
+        const documentsDir = app.getPath('documents');
         const appData = app.getPath('appData');
 
-        const desiredUserData = path.join(appData, APP_NAME);
-        const oldCandidates = [
+        const desiredUserData = path.join(documentsDir, USER_DATA_FOLDER_NAME);
+        const legacyCandidates = [
             path.join(appData, 'nodecast-tv'),
-            path.join(appData, 'NodeCast TV')
+            path.join(appData, 'NodeCast TV'),
+            path.join(appData, APP_NAME),
+            path.join(appData, USER_DATA_FOLDER_NAME)
         ];
 
-        for (const candidate of oldCandidates) {
-            const hasOldData =
-                fs.existsSync(path.join(candidate, 'data')) ||
-                fs.existsSync(path.join(candidate, 'transcode-cache'));
+        fs.mkdirSync(desiredUserData, { recursive: true });
 
-            if (hasOldData) {
-                app.setPath('userData', candidate);
-                return;
+        const hasDesiredData =
+            fs.existsSync(path.join(desiredUserData, 'data')) ||
+            fs.existsSync(path.join(desiredUserData, 'Local Storage')) ||
+            fs.existsSync(path.join(desiredUserData, 'local-update.json'));
+
+        if (!hasDesiredData) {
+            for (const candidate of legacyCandidates) {
+                if (!candidate || !fs.existsSync(candidate) || candidate === desiredUserData) continue;
+
+                const hasLegacyData =
+                    fs.existsSync(path.join(candidate, 'data')) ||
+                    fs.existsSync(path.join(candidate, 'transcode-cache')) ||
+                    fs.existsSync(path.join(candidate, 'Local Storage'));
+
+                if (!hasLegacyData) continue;
+
+                try {
+                    fs.cpSync(candidate, desiredUserData, { recursive: true, force: false });
+                    break;
+                } catch {
+                    // ignore copy issues and continue with best-effort migration
+                }
             }
         }
 
@@ -746,6 +804,10 @@ async function createMainWindow(port) {
     win.once('ready-to-show', () => {
         win.show();
         closeSplashWindow();
+        // Keep the OS from suspending the process while media is playing.
+        if (powerSaveBlockerId === null) {
+            powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+        }
     });
 
     await win.loadURL(`http://127.0.0.1:${port}`);
@@ -761,7 +823,8 @@ async function start() {
 
     try {
         const { startServer } = require('../server/index');
-        serverHandle = await startServer({ port: 0, registerSignalHandlers: false });
+        const requestedPort = Number(process.env.CALIBREVIEWER_PORT || process.env.PORT || DEFAULT_DESKTOP_PORT);
+        serverHandle = await startServer({ port: requestedPort, registerSignalHandlers: false });
 
         await createMainWindow(serverHandle.port);
     } catch (err) {
@@ -803,6 +866,11 @@ app.on('before-quit', async (event) => {
 
     quitting = true;
     event.preventDefault();
+
+    if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+        powerSaveBlocker.stop(powerSaveBlockerId);
+        powerSaveBlockerId = null;
+    }
 
     await stopServer();
     app.quit();

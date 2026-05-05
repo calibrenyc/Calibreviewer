@@ -250,11 +250,19 @@ class SettingsPage {
             checkBtn.textContent = 'Checking...';
             try {
                 let result = null;
+                let localResult = null;
 
                 setUpdateLink('');
 
                 if (window.desktopAPI.checkGithubUpdate) {
                     result = await window.desktopAPI.checkGithubUpdate();
+                }
+
+                if (window.desktopAPI.checkLocalUpdate) {
+                    localResult = await window.desktopAPI.checkLocalUpdate();
+                    if (localResult?.checkedFolder) {
+                        folderInput.value = localResult.checkedFolder;
+                    }
                 }
 
                 if (result?.repo) {
@@ -263,10 +271,6 @@ class SettingsPage {
 
                 // Fallback to local folder check if GitHub check failed.
                 if (!result || result.error) {
-                    const localResult = await window.desktopAPI.checkLocalUpdate();
-                    if (localResult?.checkedFolder) {
-                        folderInput.value = localResult.checkedFolder;
-                    }
                     if (!result) {
                         result = localResult;
                     } else {
@@ -293,6 +297,21 @@ class SettingsPage {
                         result.message = installResult.message || result.message;
                     } else if (installResult?.ok === false) {
                         setStatus(installResult.message || 'Failed to start update installation.', true);
+                        return;
+                    }
+                }
+
+                if (!canAutoInstall(result) && canAutoInstall(localResult) && window.desktopAPI.promptInstallUpdate) {
+                    const installResult = await window.desktopAPI.promptInstallUpdate(localResult);
+                    if (installResult?.started) {
+                        setStatus(installResult.message || 'Launching local update installer...');
+                        return;
+                    }
+
+                    if (installResult?.declined) {
+                        result.message = installResult.message || result.message;
+                    } else if (installResult?.ok === false) {
+                        setStatus(installResult.message || 'Failed to start local update installation.', true);
                         return;
                     }
                 }
