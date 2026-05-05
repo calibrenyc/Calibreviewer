@@ -156,10 +156,36 @@ function loadThemeFromLocalStorage() {
     }
 }
 
-function shouldTrackRequest(input) {
+function isBackgroundRequest(input, init) {
+    const readHeader = (headers, name) => {
+        if (!headers) return null;
+        if (typeof Headers !== 'undefined' && headers instanceof Headers) {
+            return headers.get(name);
+        }
+        if (Array.isArray(headers)) {
+            const match = headers.find(([headerName]) => String(headerName).toLowerCase() === name.toLowerCase());
+            return match ? match[1] : null;
+        }
+        if (typeof headers === 'object') {
+            const key = Object.keys(headers).find(headerName => headerName.toLowerCase() === name.toLowerCase());
+            return key ? headers[key] : null;
+        }
+        return null;
+    };
+
+    const headerValue = readHeader(typeof input === 'object' ? input?.headers : null, 'X-Background-Request')
+        || readHeader(init?.headers, 'X-Background-Request');
+    return String(headerValue || '').toLowerCase() === 'true';
+}
+
+function shouldTrackRequest(input, init) {
     try {
         const rawUrl = typeof input === 'string' ? input : input?.url;
         if (!rawUrl) return false;
+
+        if (isBackgroundRequest(input, init)) {
+            return false;
+        }
 
         const url = new URL(rawUrl, window.location.origin);
         const path = url.pathname;
@@ -232,7 +258,7 @@ function installGlobalActivityTracker() {
 
     const originalFetch = window.fetch.bind(window);
     window.fetch = (...args) => {
-        const track = shouldTrackRequest(args[0]);
+        const track = shouldTrackRequest(args[0], args[1]);
         if (track) begin();
 
         return originalFetch(...args)
@@ -402,7 +428,7 @@ class App {
 
         // Preload EPG data in background (non-blocking)
         // This ensures EPG info is available on Live TV page without visiting Guide first
-        this.epgGuide.loadEpg().catch(err => {
+        this.epgGuide.loadEpg(false, { background: true, preserveExisting: true }).catch(err => {
             console.warn('Background EPG load failed:', err.message);
         });
 
@@ -609,7 +635,7 @@ class App {
 
     async loadAndApplyThemeFromServer() {
         try {
-            const settings = await API.settings.get();
+            const settings = await API.request('GET', '/settings', null, { background: true });
             if (settings?.themeColors) {
                 applyThemeColors(settings.themeColors);
                 localStorage.setItem(THEME_COLORS_STORAGE_KEY, JSON.stringify(settings.themeColors));
@@ -660,7 +686,8 @@ class App {
             // Verify token with server
             const response = await fetch('/api/auth/me', {
                 headers: {
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'X-Background-Request': 'true'
                 }
             });
 
@@ -775,7 +802,11 @@ document.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
 
     // Fetch and display version badge
-    fetch('/api/version')
+    fetch('/api/version', {
+        headers: {
+            'X-Background-Request': 'true'
+        }
+    })
         .then(res => res.json())
         .then(data => {
             const badge = document.getElementById('version-badge');

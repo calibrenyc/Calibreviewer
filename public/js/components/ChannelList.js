@@ -7,6 +7,9 @@ class ChannelList {
     constructor() {
         this.sourcesCacheKey = 'calibreviewer.sourcesCache';
         this.channelsCachePrefix = 'calibreviewer.channelsCache.';
+        this.selectedSourceCacheKey = 'calibreviewer.selectedSource';
+        this.hiddenItemsCacheKey = 'calibreviewer.hiddenItemsCache';
+        this.favoritesCacheKey = 'calibreviewer.channelFavoritesCache';
         this.container = document.getElementById('channel-list');
         this.searchInput = document.getElementById('channel-search');
         this.sourceSelect = document.getElementById('source-select');
@@ -27,6 +30,7 @@ class ChannelList {
         this.renderedChannels = [];
 
         this.loadCollapsedState();
+        this.restoreViewStateCache();
         this.init();
     }
 
@@ -43,6 +47,56 @@ class ChannelList {
             return true;
         } catch {
             return false;
+        }
+    }
+
+    getSelectedSourceValue() {
+        return localStorage.getItem(this.selectedSourceCacheKey) || '';
+    }
+
+    persistSelectedSource(value = '') {
+        localStorage.setItem(this.selectedSourceCacheKey, value || '');
+    }
+
+    restoreViewStateCache() {
+        try {
+            const hiddenRaw = localStorage.getItem(this.hiddenItemsCacheKey);
+            if (hiddenRaw) {
+                const hiddenItems = JSON.parse(hiddenRaw);
+                if (Array.isArray(hiddenItems)) {
+                    this.hiddenItems = new Set(hiddenItems);
+                }
+            }
+        } catch {
+            this.hiddenItems = new Set();
+        }
+
+        try {
+            const favoritesRaw = localStorage.getItem(this.favoritesCacheKey);
+            if (favoritesRaw) {
+                const favorites = JSON.parse(favoritesRaw);
+                if (Array.isArray(favorites)) {
+                    this.visibleFavorites = new Set(favorites);
+                }
+            }
+        } catch {
+            this.visibleFavorites = new Set();
+        }
+    }
+
+    persistHiddenItemsCache() {
+        try {
+            localStorage.setItem(this.hiddenItemsCacheKey, JSON.stringify([...this.hiddenItems]));
+        } catch {
+            // ignore local cache quota issues
+        }
+    }
+
+    persistFavoritesCache() {
+        try {
+            localStorage.setItem(this.favoritesCacheKey, JSON.stringify([...this.visibleFavorites]));
+        } catch {
+            // ignore local cache quota issues
         }
     }
 
@@ -84,6 +138,7 @@ class ChannelList {
 
     populateSourceOptions() {
         this.sourceSelect.innerHTML = '<option value="">All Sources</option>';
+        const selectedSource = this.getSelectedSourceValue();
 
         const xtreamSources = this.sources.filter(s => s.type === 'xtream' && s.enabled);
         const m3uSources = this.sources.filter(s => s.type === 'm3u' && s.enabled);
@@ -110,6 +165,10 @@ class ChannelList {
                 optgroup.appendChild(option);
             });
             this.sourceSelect.appendChild(optgroup);
+        }
+
+        if (selectedSource && this.sourceSelect.querySelector(`option[value="${selectedSource}"]`)) {
+            this.sourceSelect.value = selectedSource;
         }
     }
 
@@ -239,7 +298,10 @@ class ChannelList {
         });
 
         // Source filter handler
-        this.sourceSelect.addEventListener('change', () => this.loadChannels());
+        this.sourceSelect.addEventListener('change', () => {
+            this.persistSelectedSource(this.sourceSelect.value);
+            this.loadChannels();
+        });
 
         // Show hidden toggle
         if (this.showHiddenCheckbox) {
@@ -787,11 +849,12 @@ class ChannelList {
      */
     async loadSources() {
         try {
-            this.restoreSourcesCache();
-            this.sources = await API.sources.getAll();
+            const restoredFromCache = this.restoreSourcesCache();
+            this.sources = await API.sources.getAll({ background: restoredFromCache });
             console.log('[ChannelList] loadSources: Got', this.sources?.length || 0, 'sources');
             this.populateSourceOptions();
             this.persistSourcesCache();
+            this.persistSelectedSource(this.sourceSelect.value);
         } catch (err) {
             console.error('Error loading sources:', err);
         }
@@ -827,15 +890,15 @@ class ChannelList {
             }
 
             if (type === 'xtream') {
-                await this.loadXtreamChannels(parseInt(id));
+                await this.loadXtreamChannels(parseInt(id), false, { background: restoredFromCache });
             } else if (type === 'm3u') {
-                await this.loadM3uChannels(parseInt(id));
+                await this.loadM3uChannels(parseInt(id), false, { background: restoredFromCache });
             }
 
             // Load hidden items and favorites
             await Promise.all([
-                this.loadHiddenItems(),
-                this.loadFavorites()
+                this.loadHiddenItems({ background: restoredFromCache }),
+                this.loadFavorites({ background: restoredFromCache })
             ]);
 
             this.persistChannelsCache(sourceValue);
@@ -871,16 +934,16 @@ class ChannelList {
             console.log('[ChannelList] loadAllChannels: xtream=', xtreamSources.length, 'm3u=', m3uSources.length);
 
             for (const source of xtreamSources) {
-                await this.loadXtreamChannels(source.id, true);
+                await this.loadXtreamChannels(source.id, true, { background: restoredFromCache });
             }
 
             for (const source of m3uSources) {
-                await this.loadM3uChannels(source.id, true);
+                await this.loadM3uChannels(source.id, true, { background: restoredFromCache });
             }
 
             await Promise.all([
-                this.loadHiddenItems(),
-                this.loadFavorites()
+                this.loadHiddenItems({ background: restoredFromCache }),
+                this.loadFavorites({ background: restoredFromCache })
             ]);
             this.persistChannelsCache('');
             this.render();
@@ -892,14 +955,14 @@ class ChannelList {
     /**
      * Load Xtream channels
      */
-    async loadXtreamChannels(sourceId, append = false) {
+    async loadXtreamChannels(sourceId, append = false, requestOptions = {}) {
         if (!append) {
             this.channels = [];
             this.groups = [];
         }
 
-        const categories = await API.proxy.xtream.liveCategories(sourceId);
-        const streams = await API.proxy.xtream.liveStreams(sourceId);
+        const categories = await API.proxy.xtream.liveCategories(sourceId, requestOptions);
+        const streams = await API.proxy.xtream.liveStreams(sourceId, null, requestOptions);
 
         // Map categories to groups
         const categoryGroups = categories.map(cat => ({
@@ -932,15 +995,15 @@ class ChannelList {
      * Load M3U channels
      * Now uses unified Xtream-style API endpoints (backend supports both source types)
      */
-    async loadM3uChannels(sourceId, append = false) {
+    async loadM3uChannels(sourceId, append = false, requestOptions = {}) {
         if (!append) {
             this.channels = [];
             this.groups = [];
         }
 
         // Use Xtream API endpoints - backend now supports M3U sources too
-        const categories = await API.proxy.xtream.liveCategories(sourceId);
-        const streams = await API.proxy.xtream.liveStreams(sourceId);
+        const categories = await API.proxy.xtream.liveCategories(sourceId, requestOptions);
+        const streams = await API.proxy.xtream.liveStreams(sourceId, null, requestOptions);
 
         // Map categories to groups (keeping m3u sourceType for downstream compatibility)
         const m3uGroups = categories.map(cat => ({
@@ -972,10 +1035,11 @@ class ChannelList {
     /**
      * Load hidden items
      */
-    async loadHiddenItems() {
+    async loadHiddenItems(requestOptions = {}) {
         try {
-            const items = await API.channels.getHidden();
+            const items = await API.channels.getHidden(null, requestOptions);
             this.hiddenItems = new Set(items.map(i => `${i.item_type}:${i.source_id}:${i.item_id}`));
+            this.persistHiddenItemsCache();
         } catch (err) {
             console.error('Error loading hidden items:', err);
         }
@@ -991,15 +1055,16 @@ class ChannelList {
     /**
      * Load favorites
      */
-    async loadFavorites() {
+    async loadFavorites(requestOptions = {}) {
         try {
             // Get all favorites (filtered for channels or legacy items without type)
-            const allFavs = await API.favorites.getAll();
+            const allFavs = await API.favorites.getAll(null, null, requestOptions);
             const channelFavs = allFavs.filter(f => !f.item_type || f.item_type === 'channel');
 
             this.visibleFavorites = new Set(
                 channelFavs.map(f => `${f.source_id}:${f.item_id || f.channel_id}`)
             );
+            this.persistFavoritesCache();
         } catch (err) {
             console.error('Error loading favorites:', err);
         }
@@ -1026,6 +1091,7 @@ class ChannelList {
             // Optimistic update
             if (wasFavorite) {
                 this.visibleFavorites.delete(key);
+                this.persistFavoritesCache();
                 btns.forEach(btn => {
                     btn.classList.remove('active');
                     btn.innerHTML = Icons.favoriteOutline;
@@ -1033,6 +1099,7 @@ class ChannelList {
                 });
             } else {
                 this.visibleFavorites.add(key);
+                this.persistFavoritesCache();
                 btns.forEach(btn => {
                     btn.classList.add('active');
                     btn.innerHTML = Icons.favorite;
@@ -1080,6 +1147,7 @@ class ChannelList {
                 const channel = this.channels.find(c => c.sourceId == sourceId && c.id == channelId);
                 if (channel) this.updateFavoritesGroup(channel, false);
             }
+            this.persistFavoritesCache();
         }
     }
 

@@ -653,7 +653,7 @@
             const backBtn = document.getElementById('back-to-profiles');
             const subtitle = document.getElementById('login-subtitle');
 
-            if (isSetupMode || !profilePicker || !hasProfilesForPicker()) {
+            if (isSetupMode || !profilePicker) {
                 showCredentialForm({ showBackToProfiles: false });
                 return;
             }
@@ -723,7 +723,7 @@
             const entries = getProfileEntries();
             grid.innerHTML = '';
 
-            if (!entries.length || isSetupMode) {
+            if (isSetupMode) {
                 picker.classList.add('hidden');
                 showCredentialForm({ showBackToProfiles: false });
                 return;
@@ -803,6 +803,32 @@
             });
 
             grid.appendChild(addCard);
+
+            const ssoCard = document.createElement('button');
+            ssoCard.type = 'button';
+            ssoCard.className = 'profile-card';
+            ssoCard.title = 'Sign in with SSO';
+
+            const ssoAvatar = document.createElement('span');
+            ssoAvatar.className = 'profile-avatar';
+            ssoAvatar.textContent = 'SSO';
+
+            const ssoName = document.createElement('span');
+            ssoName.className = 'profile-name';
+            ssoName.textContent = 'Single Sign-On';
+
+            const ssoMeta = document.createElement('span');
+            ssoMeta.className = 'profile-meta';
+            ssoMeta.textContent = 'Use your provider login';
+
+            ssoCard.appendChild(ssoAvatar);
+            ssoCard.appendChild(ssoName);
+            ssoCard.appendChild(ssoMeta);
+            ssoCard.addEventListener('click', () => {
+                window.location.href = '/api/auth/oidc/login';
+            });
+
+            grid.appendChild(ssoCard);
             showProfilePicker();
         }
 

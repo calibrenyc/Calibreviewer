@@ -177,7 +177,7 @@ class EpgGuide {
         this._backgroundRefreshTimer = setInterval(async () => {
             console.log('[EPG] Refreshing EPG display from cache');
             try {
-                await this.fetchEpgData(false); // Fetch cached data (no force refresh)
+                await this.fetchEpgData(false, { background: true }); // Fetch cached data (no force refresh)
 
                 // Update channel list program info if visible
                 if (window.app?.channelList) {
@@ -211,10 +211,14 @@ class EpgGuide {
     /**
      * Load EPG data (server-side caching)
      */
-    async loadEpg(forceRefresh = false) {
+    async loadEpg(forceRefresh = false, options = {}) {
         try {
-            this.container.innerHTML = '<div class="loading"></div>';
-            await this.fetchEpgData(forceRefresh);
+            const shouldPreserveExisting = options?.preserveExisting && (this.channels.length > 0 || this.programmes.length > 0);
+            if (!shouldPreserveExisting) {
+                this.container.innerHTML = '<div class="loading"></div>';
+            }
+
+            await this.fetchEpgData(forceRefresh, options);
             this.lastRefreshTime = new Date();
             this.render();
 
@@ -235,9 +239,9 @@ class EpgGuide {
     /**
      * Fetch EPG data from sources
      */
-    async fetchEpgData(forceRefresh = false) {
+    async fetchEpgData(forceRefresh = false, options = {}) {
         // Get ALL sources and filter for EPG-capable types
-        const allSources = await API.sources.getAll();
+        const allSources = await API.request('GET', '/sources', null, { background: !!options?.background });
         const sources = allSources.filter(s => (s.type === 'epg' || s.type === 'xtream') && s.enabled);
 
         if (sources.length === 0) {
@@ -252,7 +256,11 @@ class EpgGuide {
         // Load EPG from ALL sources in parallel
         const fetchPromises = sources.map(async (source) => {
             try {
-                const response = await fetch(`/api/proxy/epg/${source.id}${queryParams}`);
+                const response = await fetch(`/api/proxy/epg/${source.id}${queryParams}`, options?.background ? {
+                    headers: {
+                        'X-Background-Request': 'true'
+                    }
+                } : undefined);
                 if (!response.ok) throw new Error(`Status ${response.status}`);
                 return await response.json();
             } catch (e) {
@@ -300,7 +308,7 @@ class EpgGuide {
         this.persistEpgSnapshot();
 
         // Load favorites
-        const favs = await API.favorites.getAll();
+        const favs = await API.request('GET', '/favorites', null, { background: !!options?.background });
         this.favorites = new Set(favs.map(f => `${f.source_id}:${f.item_id}`));
     }
 

@@ -6,7 +6,7 @@ const API = {
     /**
      * Make API request
      */
-    async request(method, endpoint, data = null) {
+    async request(method, endpoint, data = null, requestOptions = {}) {
         const options = {
             method,
             headers: {
@@ -14,10 +14,22 @@ const API = {
             }
         };
 
+        const normalizedOptions = requestOptions && typeof requestOptions === 'object'
+            ? requestOptions
+            : {};
+
         // Add authentication token if available
         const token = localStorage.getItem('authToken');
         if (token) {
             options.headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        if (normalizedOptions.background) {
+            options.headers['X-Background-Request'] = 'true';
+        }
+
+        if (normalizedOptions.headers && typeof normalizedOptions.headers === 'object') {
+            Object.assign(options.headers, normalizedOptions.headers);
         }
 
         if (data) {
@@ -50,7 +62,7 @@ const API = {
 
     // Sources
     sources: {
-        getAll: () => API.request('GET', '/sources'),
+        getAll: (requestOptions = {}) => API.request('GET', '/sources', null, requestOptions),
         getByType: (type) => API.request('GET', `/sources/type/${type}`),
         getById: (id) => API.request('GET', `/sources/${id}`),
         create: (data) => API.request('POST', '/sources', data),
@@ -66,7 +78,7 @@ const API = {
 
     // Channels (hidden items)
     channels: {
-        getHidden: (sourceId = null) => API.request('GET', `/channels/hidden${sourceId ? `?sourceId=${sourceId}` : ''}`),
+        getHidden: (sourceId = null, requestOptions = {}) => API.request('GET', `/channels/hidden${sourceId ? `?sourceId=${sourceId}` : ''}`, null, requestOptions),
         hide: (sourceId, itemType, itemId) => API.request('POST', '/channels/hide', { sourceId, itemType, itemId }),
         show: (sourceId, itemType, itemId) => API.request('POST', '/channels/show', { sourceId, itemType, itemId }),
         isHidden: (sourceId, itemType, itemId) => API.request('GET', `/channels/hidden/check?sourceId=${sourceId}&itemType=${itemType}&itemId=${itemId}`),
@@ -79,13 +91,13 @@ const API = {
 
     // Favorites
     favorites: {
-        getAll: (sourceId = null, itemType = null) => {
+        getAll: (sourceId = null, itemType = null, requestOptions = {}) => {
             let url = '/favorites';
             const params = [];
             if (sourceId) params.push(`sourceId=${sourceId}`);
             if (itemType) params.push(`itemType=${itemType}`);
             if (params.length) url += '?' + params.join('&');
-            return API.request('GET', url);
+            return API.request('GET', url, null, requestOptions);
         },
         add: (sourceId, itemId, itemType = 'channel') =>
             API.request('POST', '/favorites', { sourceId, itemId, itemType }),
@@ -102,14 +114,18 @@ const API = {
             auth: (sourceId) => API.request('GET', `/proxy/xtream/${sourceId}/auth`),
             liveCategories: (sourceId, options = {}) => {
                 const params = options.includeHidden ? '?includeHidden=true' : '';
-                return API.request('GET', `/proxy/xtream/${sourceId}/live_categories${params}`);
+                return API.request('GET', `/proxy/xtream/${sourceId}/live_categories${params}`, null, {
+                    background: !!options.background
+                });
             },
             liveStreams: (sourceId, categoryId = null, options = {}) => {
                 const params = [];
                 if (categoryId) params.push(`category_id=${categoryId}`);
                 if (options.includeHidden) params.push('includeHidden=true');
                 const query = params.length ? `?${params.join('&')}` : '';
-                return API.request('GET', `/proxy/xtream/${sourceId}/live_streams${query}`);
+                return API.request('GET', `/proxy/xtream/${sourceId}/live_streams${query}`, null, {
+                    background: !!options.background
+                });
             },
             vodCategories: (sourceId, options = {}) => {
                 const params = options.includeHidden ? '?includeHidden=true' : '';
