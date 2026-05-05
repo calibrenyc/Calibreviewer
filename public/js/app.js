@@ -5,6 +5,10 @@
 const THEME_COLORS_STORAGE_KEY = 'themeColors';
 const UI_MODE_STORAGE_KEY = 'uiMode';
 const KEYBOARD_ONLY_MODE_STORAGE_KEY = 'keyboardOnlyMode';
+const SAVED_LOGINS_KEY = 'savedLogins';
+const KNOWN_USERS_KEY = 'knownLoginUsers';
+const REMEMBER_ME_KEY = 'rememberLoginEnabled';
+const LAST_LOGIN_USER_KEY = 'lastLoginUser';
 
 const DEFAULT_THEME_COLORS = {
     '--color-bg-primary': '#0a0a0f',
@@ -96,6 +100,43 @@ function applyKeyboardOnlyMode(enabled = false) {
         detail: { enabled: normalized }
     }));
     return normalized;
+}
+
+function rememberProfilesEnabled() {
+    const saved = localStorage.getItem(REMEMBER_ME_KEY);
+    return saved === null ? true : saved === 'true';
+}
+
+function safeReadJsonArray(key) {
+    try {
+        const parsed = JSON.parse(localStorage.getItem(key) || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch {
+        return [];
+    }
+}
+
+function safeWriteJsonArray(key, value) {
+    localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []));
+}
+
+function syncRememberedAuthProfile(user, token) {
+    if (!user?.username || !rememberProfilesEnabled()) return;
+
+    const now = new Date().toISOString();
+    localStorage.setItem(LAST_LOGIN_USER_KEY, user.username);
+
+    const knownUsers = safeReadJsonArray(KNOWN_USERS_KEY)
+        .filter(entry => entry?.username && entry.username !== user.username);
+    knownUsers.unshift({ username: user.username, lastUsedAt: now });
+    safeWriteJsonArray(KNOWN_USERS_KEY, knownUsers.slice(0, 6));
+
+    if (token) {
+        const savedProfiles = safeReadJsonArray(SAVED_LOGINS_KEY)
+            .filter(entry => entry?.username && entry.username !== user.username);
+        savedProfiles.unshift({ username: user.username, token, lastUsedAt: now });
+        safeWriteJsonArray(SAVED_LOGINS_KEY, savedProfiles.slice(0, 6));
+    }
 }
 
 window.DEFAULT_THEME_COLORS = DEFAULT_THEME_COLORS;
@@ -628,6 +669,7 @@ class App {
             }
 
             this.currentUser = await response.json();
+            syncRememberedAuthProfile(this.currentUser, token);
 
             // Hide settings for viewers
             if (this.currentUser.role === 'viewer') {

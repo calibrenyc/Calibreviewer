@@ -5,6 +5,8 @@
 
 class ChannelList {
     constructor() {
+        this.sourcesCacheKey = 'calibreviewer.sourcesCache';
+        this.channelsCachePrefix = 'calibreviewer.channelsCache.';
         this.container = document.getElementById('channel-list');
         this.searchInput = document.getElementById('channel-search');
         this.sourceSelect = document.getElementById('source-select');
@@ -26,6 +28,89 @@ class ChannelList {
 
         this.loadCollapsedState();
         this.init();
+    }
+
+    getChannelsCacheKey(sourceValue = '') {
+        return `${this.channelsCachePrefix}${sourceValue || 'all'}`;
+    }
+
+    restoreSourcesCache() {
+        try {
+            const cached = JSON.parse(localStorage.getItem(this.sourcesCacheKey) || 'null');
+            if (!Array.isArray(cached) || cached.length === 0) return false;
+            this.sources = cached;
+            this.populateSourceOptions();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    persistSourcesCache() {
+        try {
+            localStorage.setItem(this.sourcesCacheKey, JSON.stringify(this.sources || []));
+        } catch {
+            // ignore local cache quota issues
+        }
+    }
+
+    restoreChannelsCache(sourceValue = '') {
+        try {
+            const raw = localStorage.getItem(this.getChannelsCacheKey(sourceValue));
+            if (!raw) return false;
+            const cached = JSON.parse(raw);
+            if (!Array.isArray(cached?.channels)) return false;
+
+            this.channels = cached.channels;
+            this.groups = Array.isArray(cached.groups) ? cached.groups : [];
+            return this.channels.length > 0;
+        } catch {
+            return false;
+        }
+    }
+
+    persistChannelsCache(sourceValue = '') {
+        try {
+            const payload = {
+                timestamp: Date.now(),
+                channels: this.channels || [],
+                groups: this.groups || []
+            };
+            localStorage.setItem(this.getChannelsCacheKey(sourceValue), JSON.stringify(payload));
+        } catch {
+            // ignore local cache quota issues
+        }
+    }
+
+    populateSourceOptions() {
+        this.sourceSelect.innerHTML = '<option value="">All Sources</option>';
+
+        const xtreamSources = this.sources.filter(s => s.type === 'xtream' && s.enabled);
+        const m3uSources = this.sources.filter(s => s.type === 'm3u' && s.enabled);
+
+        if (xtreamSources.length > 0) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = 'Xtream';
+            xtreamSources.forEach(s => {
+                const option = document.createElement('option');
+                option.value = `xtream:${s.id}`;
+                option.textContent = s.name;
+                optgroup.appendChild(option);
+            });
+            this.sourceSelect.appendChild(optgroup);
+        }
+
+        if (m3uSources.length > 0) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = 'M3U';
+            m3uSources.forEach(s => {
+                const option = document.createElement('option');
+                option.value = `m3u:${s.id}`;
+                option.textContent = s.name;
+                optgroup.appendChild(option);
+            });
+            this.sourceSelect.appendChild(optgroup);
+        }
     }
 
     /**
@@ -702,36 +787,11 @@ class ChannelList {
      */
     async loadSources() {
         try {
+            this.restoreSourcesCache();
             this.sources = await API.sources.getAll();
             console.log('[ChannelList] loadSources: Got', this.sources?.length || 0, 'sources');
-            this.sourceSelect.innerHTML = '<option value="">All Sources</option>';
-
-            const xtreamSources = this.sources.filter(s => s.type === 'xtream' && s.enabled);
-            const m3uSources = this.sources.filter(s => s.type === 'm3u' && s.enabled);
-
-            if (xtreamSources.length > 0) {
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = 'Xtream';
-                xtreamSources.forEach(s => {
-                    const option = document.createElement('option');
-                    option.value = `xtream:${s.id}`;
-                    option.textContent = s.name;
-                    optgroup.appendChild(option);
-                });
-                this.sourceSelect.appendChild(optgroup);
-            }
-
-            if (m3uSources.length > 0) {
-                const optgroup = document.createElement('optgroup');
-                optgroup.label = 'M3U';
-                m3uSources.forEach(s => {
-                    const option = document.createElement('option');
-                    option.value = `m3u:${s.id}`;
-                    option.textContent = s.name;
-                    optgroup.appendChild(option);
-                });
-                this.sourceSelect.appendChild(optgroup);
-            }
+            this.populateSourceOptions();
+            this.persistSourcesCache();
         } catch (err) {
             console.error('Error loading sources:', err);
         }
@@ -746,7 +806,11 @@ class ChannelList {
         this.currentRenderId = null; // Reset render tracking
 
         const sourceValue = this.sourceSelect.value;
-        const self = this;
+
+        const restoredFromCache = this.restoreChannelsCache(sourceValue);
+        if (restoredFromCache) {
+            this.render();
+        }
 
         if (!sourceValue) {
             // Load from all sources
@@ -758,7 +822,9 @@ class ChannelList {
         const [type, id] = sourceValue.split(':');
 
         try {
-            this.container.innerHTML = '<div class="loading"></div>';
+            if (!restoredFromCache) {
+                this.container.innerHTML = '<div class="loading"></div>';
+            }
 
             if (type === 'xtream') {
                 await this.loadXtreamChannels(parseInt(id));
@@ -771,6 +837,8 @@ class ChannelList {
                 this.loadHiddenItems(),
                 this.loadFavorites()
             ]);
+
+            this.persistChannelsCache(sourceValue);
 
             this.render();
         } catch (err) {
@@ -788,8 +856,15 @@ class ChannelList {
         this.channels = [];
         this.groups = [];
 
+        const restoredFromCache = this.restoreChannelsCache('');
+        if (restoredFromCache) {
+            this.render();
+        }
+
         try {
-            this.container.innerHTML = '<div class="loading"></div>';
+            if (!restoredFromCache) {
+                this.container.innerHTML = '<div class="loading"></div>';
+            }
 
             const xtreamSources = this.sources.filter(s => s.type === 'xtream' && s.enabled);
             const m3uSources = this.sources.filter(s => s.type === 'm3u' && s.enabled);
@@ -807,6 +882,7 @@ class ChannelList {
                 this.loadHiddenItems(),
                 this.loadFavorites()
             ]);
+            this.persistChannelsCache('');
             this.render();
         } catch (err) {
             console.error('Error loading all channels:', err);

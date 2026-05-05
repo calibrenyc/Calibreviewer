@@ -464,6 +464,12 @@
         const LAST_LOGIN_USER_KEY = 'lastLoginUser';
         const MAX_SAVED_LOGINS = 6;
 
+        function clearRememberedProfiles() {
+            localStorage.removeItem(SAVED_LOGINS_KEY);
+            localStorage.removeItem(KNOWN_USERS_KEY);
+            localStorage.removeItem(LAST_LOGIN_USER_KEY);
+        }
+
         function getRememberMeEnabled() {
             const saved = localStorage.getItem(REMEMBER_ME_KEY);
             return saved === null ? true : saved === 'true';
@@ -474,6 +480,7 @@
         }
 
         function getSavedLogins() {
+            if (!getRememberMeEnabled()) return [];
             try {
                 const parsed = JSON.parse(localStorage.getItem(SAVED_LOGINS_KEY) || '[]');
                 if (!Array.isArray(parsed)) return [];
@@ -484,6 +491,7 @@
         }
 
         function getKnownUsers() {
+            if (!getRememberMeEnabled()) return [];
             try {
                 const parsed = JSON.parse(localStorage.getItem(KNOWN_USERS_KEY) || '[]');
                 if (!Array.isArray(parsed)) return [];
@@ -509,10 +517,15 @@
         }
 
         function setKnownUsers(entries) {
+            if (!getRememberMeEnabled()) {
+                localStorage.removeItem(KNOWN_USERS_KEY);
+                return;
+            }
             localStorage.setItem(KNOWN_USERS_KEY, JSON.stringify(entries.slice(0, MAX_SAVED_LOGINS)));
         }
 
         function upsertKnownUser(username) {
+            if (!getRememberMeEnabled()) return;
             const cleaned = String(username || '').trim();
             if (!cleaned) return;
 
@@ -530,6 +543,10 @@
         }
 
         function setSavedLogins(entries) {
+            if (!getRememberMeEnabled()) {
+                localStorage.removeItem(SAVED_LOGINS_KEY);
+                return;
+            }
             localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(entries.slice(0, MAX_SAVED_LOGINS)));
         }
 
@@ -544,11 +561,11 @@
             const next = getSavedLogins().filter(entry => entry.username !== username);
             setSavedLogins(next);
             removeKnownUser(username);
-            renderSavedLogins();
+            renderProfilePicker();
         }
 
         function clearSavedLogins() {
-            setSavedLogins([]);
+            clearRememberedProfiles();
             renderProfilePicker();
         }
 
@@ -558,7 +575,9 @@
             if (!usernameInput || !passwordInput) return;
 
             usernameInput.value = entry.username;
-            localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+            if (getRememberMeEnabled()) {
+                localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+            }
             upsertKnownUser(entry.username);
             showCredentialForm({ showBackToProfiles: true });
             passwordInput.focus();
@@ -670,7 +689,9 @@
             try {
                 await validateToken(entry.token);
                 localStorage.setItem('authToken', entry.token);
-                localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+                if (getRememberMeEnabled()) {
+                    localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+                }
                 upsertKnownUser(entry.username);
                 if (getRememberMeEnabled()) {
                     upsertSavedLogin(entry.username, entry.token);
@@ -793,11 +814,11 @@
             rememberCheckbox.checked = getRememberMeEnabled();
 
             const lastUser = localStorage.getItem(LAST_LOGIN_USER_KEY);
-            if (lastUser) {
+            if (lastUser && getRememberMeEnabled()) {
                 usernameInput.value = lastUser;
             }
 
-            if (lastUser) {
+            if (lastUser && getRememberMeEnabled()) {
                 upsertKnownUser(lastUser);
             }
 
@@ -805,7 +826,8 @@
                 const enabled = rememberCheckbox.checked;
                 setRememberMeEnabled(enabled);
                 if (!enabled) {
-                    clearSavedLogins();
+                    clearRememberedProfiles();
+                    renderProfilePicker();
                 }
             });
 
@@ -896,12 +918,14 @@
 
                 // Store token
                 localStorage.setItem('authToken', data.token);
-                localStorage.setItem(LAST_LOGIN_USER_KEY, username);
-                upsertKnownUser(username);
                 setRememberMeEnabled(rememberMe);
 
                 if (rememberMe) {
+                    localStorage.setItem(LAST_LOGIN_USER_KEY, username);
+                    upsertKnownUser(username);
                     upsertSavedLogin(username, data.token);
+                } else {
+                    clearRememberedProfiles();
                 }
 
                 // Redirect to main app (replace history to prevent back button issues)

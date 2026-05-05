@@ -5,6 +5,7 @@
 
 class EpgGuide {
     constructor() {
+        this.cacheKey = 'calibreviewer.epgCache';
         this.container = document.getElementById('epg-grid');
         this.dateDisplay = document.getElementById('guide-date');
         this.prevBtn = document.getElementById('guide-prev');
@@ -35,7 +36,46 @@ class EpgGuide {
         this._lastVisibleStart = -1;
         this._lastVisibleEnd = -1;
 
+        this.restorePersistedEpg();
+
         this.init();
+    }
+
+    restorePersistedEpg() {
+        try {
+            const raw = localStorage.getItem(this.cacheKey);
+            if (!raw) return false;
+            const cached = JSON.parse(raw);
+            if (!Array.isArray(cached?.channels) || !Array.isArray(cached?.programmes)) {
+                return false;
+            }
+
+            this.channels = cached.channels;
+            this.programmes = cached.programmes;
+            this.channelMap = new Map();
+            this.channels.forEach(ch => {
+                this.channelMap.set(ch.id, ch);
+                if (ch.name) {
+                    this.channelMap.set(ch.name.toLowerCase(), ch);
+                }
+            });
+
+            return this.channels.length > 0 || this.programmes.length > 0;
+        } catch {
+            return false;
+        }
+    }
+
+    persistEpgSnapshot() {
+        try {
+            localStorage.setItem(this.cacheKey, JSON.stringify({
+                timestamp: Date.now(),
+                channels: this.channels || [],
+                programmes: this.programmes || []
+            }));
+        } catch {
+            // ignore local cache quota issues
+        }
     }
 
     /**
@@ -256,6 +296,8 @@ class EpgGuide {
                 this.channelMap.set(ch.name.toLowerCase(), ch);
             }
         });
+
+        this.persistEpgSnapshot();
 
         // Load favorites
         const favs = await API.favorites.getAll();
