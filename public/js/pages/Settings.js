@@ -156,23 +156,35 @@ class SettingsPage {
         const section = document.getElementById('desktop-update-section');
         const repoInput = document.getElementById('update-repo');
         const folderInput = document.getElementById('update-folder-path');
+        const saveRepoBtn = document.getElementById('save-update-repo');
         const selectBtn = document.getElementById('select-update-folder');
         const checkBtn = document.getElementById('check-local-update');
+        const openBtn = document.getElementById('open-update-release');
         const statusEl = document.getElementById('local-update-status');
 
-        if (!section || !repoInput || !folderInput || !selectBtn || !checkBtn || !statusEl) return;
+        if (!section || !repoInput || !folderInput || !saveRepoBtn || !selectBtn || !checkBtn || !openBtn || !statusEl) return;
+
+        let latestUpdateUrl = '';
 
         const setStatus = (message, isError = false) => {
             statusEl.textContent = message;
             statusEl.style.color = isError ? 'var(--color-error)' : '';
         };
 
+        const setUpdateLink = (url, buttonLabel = 'Open Update') => {
+            latestUpdateUrl = typeof url === 'string' ? url : '';
+            openBtn.disabled = !latestUpdateUrl;
+            openBtn.textContent = buttonLabel;
+        };
+
         // Browser mode fallback (non-Electron)
         if (!window.desktopAPI) {
             repoInput.value = 'Desktop mode only';
             folderInput.value = 'Desktop mode only';
+            saveRepoBtn.disabled = true;
             selectBtn.disabled = true;
             checkBtn.disabled = true;
+            openBtn.disabled = true;
             setStatus('Desktop update checker is available in the installed app only.');
             return;
         }
@@ -182,11 +194,31 @@ class SettingsPage {
                 const meta = await window.desktopAPI.getAppMeta();
                 repoInput.value = meta.updateRepo || 'calibrenyc/Calibreviewer';
                 folderInput.value = meta.updateFolder || '';
+                setUpdateLink('');
                 setStatus(`Current version: v${meta.appVersion} (${repoInput.value})`);
             } catch (err) {
                 setStatus('Failed to load desktop update metadata.', true);
             }
         };
+
+        saveRepoBtn.addEventListener('click', async () => {
+            saveRepoBtn.disabled = true;
+            try {
+                if (!window.desktopAPI.setUpdateRepo) {
+                    throw new Error('This desktop build does not support repository updates.');
+                }
+
+                const result = await window.desktopAPI.setUpdateRepo(repoInput.value);
+                if (result?.repo) {
+                    repoInput.value = result.repo;
+                }
+                setStatus(result?.message || 'Repository saved.', !result?.ok);
+            } catch (err) {
+                setStatus(err?.message || 'Failed to save repository.', true);
+            } finally {
+                saveRepoBtn.disabled = false;
+            }
+        });
 
         selectBtn.addEventListener('click', async () => {
             selectBtn.disabled = true;
@@ -209,6 +241,8 @@ class SettingsPage {
             try {
                 let result = null;
 
+                setUpdateLink('');
+
                 if (window.desktopAPI.checkGithubUpdate) {
                     result = await window.desktopAPI.checkGithubUpdate();
                 }
@@ -228,16 +262,39 @@ class SettingsPage {
                     } else {
                         result.message = `${result.message} Fallback: ${localResult?.message || 'Local check completed.'}`;
                     }
+                    setUpdateLink('', 'Open Update');
                 } else if (result?.downloadUrl) {
-                    result.message = `${result.message} Download: ${result.downloadUrl}`;
+                    const isDownload = /\.(exe|msi|zip)$/i.test(result.downloadUrl);
+                    setUpdateLink(result.downloadUrl, isDownload ? 'Download Update' : 'Open Release');
+                    result.message = `${result.message} Use the "${openBtn.textContent}" button to continue.`;
+                } else if (result?.releaseUrl) {
+                    setUpdateLink(result.releaseUrl, 'Open Release');
+                    result.message = `${result.message} Use the "Open Release" button to continue.`;
                 }
 
                 setStatus(result?.message || 'Update check completed.');
             } catch (err) {
+                setUpdateLink('');
                 setStatus('Failed to check local updates.', true);
             } finally {
                 checkBtn.disabled = false;
                 checkBtn.textContent = 'Check for Updates';
+            }
+        });
+
+        openBtn.addEventListener('click', async () => {
+            if (!latestUpdateUrl) return;
+
+            openBtn.disabled = true;
+            try {
+                const result = await window.desktopAPI.openExternalUrl(latestUpdateUrl);
+                if (!result?.ok) {
+                    throw new Error(result?.message || 'Could not open update URL.');
+                }
+            } catch (err) {
+                setStatus(err?.message || 'Failed to open update link.', true);
+            } finally {
+                openBtn.disabled = false;
             }
         });
 

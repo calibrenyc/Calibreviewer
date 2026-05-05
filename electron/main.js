@@ -326,6 +326,27 @@ function registerDesktopIpc() {
             };
         }
     });
+
+    ipcMain.handle('desktop:open-external-url', async (_event, url) => {
+        try {
+            if (typeof url !== 'string' || !url.trim()) {
+                return { ok: false, message: 'Missing URL.' };
+            }
+
+            const parsed = new URL(url);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return { ok: false, message: 'Only http/https URLs are allowed.' };
+            }
+
+            await shell.openExternal(parsed.toString());
+            return { ok: true };
+        } catch (error) {
+            return {
+                ok: false,
+                message: `Failed to open URL: ${error?.message || 'Unknown error'}`
+            };
+        }
+    });
 }
 
 function configureUserDataPath() {

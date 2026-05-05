@@ -458,7 +458,7 @@
                   <span class="setting-label">Repository</span>
                   <span class="setting-hint">Checks GitHub releases/tags for updates.</span>
                 </div>
-                <input type="text" id="update-repo" class="search-input" style="width: 320px;" readonly>
+                <input type="text" id="update-repo" class="search-input" style="width: 320px;" placeholder="owner/repo">
               </div>
               <div class="setting-item">
                 <div class="setting-info" style="flex: 1;">
@@ -468,8 +468,10 @@
                 <input type="text" id="update-folder-path" class="search-input" style="width: 320px;" readonly>
               </div>
               <div class="setting-item" style="gap: var(--space-sm);">
+                <button class="btn btn-sm btn-secondary" id="save-update-repo">Save Repo</button>
                 <button class="btn btn-sm btn-secondary" id="select-update-folder">Select Folder</button>
                 <button class="btn btn-sm btn-primary" id="check-local-update">Check for Updates</button>
+                <button class="btn btn-sm btn-primary" id="open-update-release" disabled>Open Update</button>
               </div>
               <p id="local-update-status" class="hint">Local update checker is ready.</p>
             </div>
