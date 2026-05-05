@@ -139,7 +139,7 @@ async function promptAndInstallUpdate(updateInfo) {
     if (!hasDirectInstaller) {
         return {
             ok: false,
-            message: 'No Windows installer asset was found for this update. Open the release page instead.'
+            message: 'No installable package was found for this update source.'
         };
     }
 

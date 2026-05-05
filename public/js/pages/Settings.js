@@ -159,12 +159,9 @@ class SettingsPage {
         const saveRepoBtn = document.getElementById('save-update-repo');
         const selectBtn = document.getElementById('select-update-folder');
         const checkBtn = document.getElementById('check-local-update');
-        const openBtn = document.getElementById('open-update-release');
         const statusEl = document.getElementById('local-update-status');
 
-        if (!section || !repoInput || !folderInput || !saveRepoBtn || !selectBtn || !checkBtn || !openBtn || !statusEl) return;
-
-        let latestUpdateUrl = '';
+        if (!section || !repoInput || !folderInput || !saveRepoBtn || !selectBtn || !checkBtn || !statusEl) return;
 
         const canAutoInstall = (result) => {
             if (!result?.updateAvailable) return false;
@@ -181,12 +178,6 @@ class SettingsPage {
             statusEl.style.color = isError ? 'var(--color-error)' : '';
         };
 
-        const setUpdateLink = (url, buttonLabel = 'Open Update') => {
-            latestUpdateUrl = typeof url === 'string' ? url : '';
-            openBtn.disabled = !latestUpdateUrl;
-            openBtn.textContent = buttonLabel;
-        };
-
         // Browser mode fallback (non-Electron)
         if (!window.desktopAPI) {
             repoInput.value = 'Desktop mode only';
@@ -194,7 +185,6 @@ class SettingsPage {
             saveRepoBtn.disabled = true;
             selectBtn.disabled = true;
             checkBtn.disabled = true;
-            openBtn.disabled = true;
             setStatus('Desktop update checker is available in the installed app only.');
             return;
         }
@@ -204,7 +194,6 @@ class SettingsPage {
                 const meta = await window.desktopAPI.getAppMeta();
                 repoInput.value = meta.updateRepo || 'calibrenyc/Calibreviewer';
                 folderInput.value = meta.updateFolder || '';
-                setUpdateLink('');
                 setStatus(`Current version: v${meta.appVersion} (${repoInput.value})`);
             } catch (err) {
                 setStatus('Failed to load desktop update metadata.', true);
@@ -247,12 +236,10 @@ class SettingsPage {
 
         checkBtn.addEventListener('click', async () => {
             checkBtn.disabled = true;
-            checkBtn.textContent = 'Checking...';
+            checkBtn.textContent = 'Checking & Installing...';
             try {
                 let result = null;
                 let localResult = null;
-
-                setUpdateLink('');
 
                 if (window.desktopAPI.checkGithubUpdate) {
                     result = await window.desktopAPI.checkGithubUpdate();
@@ -276,14 +263,6 @@ class SettingsPage {
                     } else {
                         result.message = `${result.message} Fallback: ${localResult?.message || 'Local check completed.'}`;
                     }
-                    setUpdateLink('', 'Open Update');
-                } else if (result?.downloadUrl) {
-                    const isDownload = /\.(exe|msi|zip)$/i.test(result.downloadUrl);
-                    setUpdateLink(result.downloadUrl, isDownload ? 'Download Update' : 'Open Release');
-                    result.message = `${result.message} Use the "${openBtn.textContent}" button to continue.`;
-                } else if (result?.releaseUrl) {
-                    setUpdateLink(result.releaseUrl, 'Open Release');
-                    result.message = `${result.message} Use the "Open Release" button to continue.`;
                 }
 
                 if (canAutoInstall(result) && window.desktopAPI.promptInstallUpdate) {
@@ -316,29 +295,17 @@ class SettingsPage {
                     }
                 }
 
-                setStatus(result?.message || 'Update check completed.');
+                if (!canAutoInstall(result) && !canAutoInstall(localResult)) {
+                    setStatus('No installable update package was found. The app only supports automatic installer updates.', true);
+                    return;
+                }
+
+                setStatus(result?.message || localResult?.message || 'Update check completed.');
             } catch (err) {
-                setUpdateLink('');
                 setStatus('Failed to check local updates.', true);
             } finally {
                 checkBtn.disabled = false;
-                checkBtn.textContent = 'Check for Updates';
-            }
-        });
-
-        openBtn.addEventListener('click', async () => {
-            if (!latestUpdateUrl) return;
-
-            openBtn.disabled = true;
-            try {
-                const result = await window.desktopAPI.openExternalUrl(latestUpdateUrl);
-                if (!result?.ok) {
-                    throw new Error(result?.message || 'Could not open update URL.');
-                }
-            } catch (err) {
-                setStatus(err?.message || 'Failed to open update link.', true);
-            } finally {
-                openBtn.disabled = false;
+                checkBtn.textContent = 'Check & Install Update';
             }
         });
 
