@@ -1,14 +1,13 @@
 const { app, BrowserWindow, dialog, Menu } = require('electron');
-const path = require('path');
 
 const APP_NAME = 'CalibreViewer Assist';
-const DEFAULT_ASSIST_PORT = Number(process.env.CALIBREVIEWER_ASSIST_PORT || 38500);
+const DEFAULT_TARGET_PORT = Number(process.env.CALIBREVIEWER_PORT || process.env.PORT || 38400);
+const ASSIST_TARGET_URL = process.env.ASSIST_TARGET_URL || `http://127.0.0.1:${DEFAULT_TARGET_PORT}`;
 
-let serverHandle;
 let assistWindow;
 let quitting = false;
 
-function createAssistWindow(port) {
+function createAssistWindow() {
     assistWindow = new BrowserWindow({
         width: 1320,
         height: 860,
@@ -26,50 +25,25 @@ function createAssistWindow(port) {
     Menu.setApplicationMenu(null);
     assistWindow.setMenuBarVisibility(false);
 
-    assistWindow.loadURL(`http://127.0.0.1:${port}/assist.html`);
-}
-
-async function start() {
-    try {
-        const { startServer } = require('../server/index');
-        serverHandle = await startServer({ port: DEFAULT_ASSIST_PORT, registerSignalHandlers: false });
-        createAssistWindow(serverHandle.port);
-    } catch (err) {
-        dialog.showErrorBox('Assist Startup Error', `${APP_NAME} failed to start.\n\n${err?.message || err}`);
-        app.quit();
-    }
-}
-
-async function stopServer() {
-    if (!serverHandle) return;
-
-    try {
-        await serverHandle.shutdownPlugins?.();
-    } catch {
-        // ignore
-    }
-
-    await new Promise((resolve) => {
-        try {
-            serverHandle.server.close(() => resolve());
-        } catch {
-            resolve();
-        }
+    assistWindow.webContents.on('did-fail-load', () => {
+        dialog.showErrorBox(
+            'Assist Connection Error',
+            `${APP_NAME} could not connect to ${ASSIST_TARGET_URL}.\n\nStart CalibreViewer first, then relaunch Assist.`
+        );
     });
 
-    serverHandle = undefined;
+    assistWindow.loadURL(`${ASSIST_TARGET_URL}/assist.html`);
 }
 
 app.whenReady().then(() => {
     app.setName(APP_NAME);
-    start();
+    createAssistWindow();
 });
 
 app.on('before-quit', async (event) => {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
-    await stopServer();
     app.quit();
 });
 

@@ -1,29 +1,72 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { loadDb, saveDb, getDefaultSettings } = require('../db');
 const diagnosticsStore = require('../services/diagnosticsStore');
+const auth = require('../auth');
 
-function readAssistKey(req) {
-    return String(
-        req.headers['x-assist-key']
-        || req.query?.key
-        || req.body?.assistKey
-        || ''
-    ).trim();
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const assistSessions = new Map();
+
+function compactAssistSessions() {
+    const now = Date.now();
+    for (const [token, session] of assistSessions.entries()) {
+        if (!session?.expiresAt || session.expiresAt <= now) {
+            assistSessions.delete(token);
+        }
+    }
 }
 
-function requireAssistKey(req, res, next) {
-    const expected = String(process.env.ASSIST_CONSOLE_KEY || '').trim();
-    if (!expected) {
-        return res.status(503).json({ error: 'Assist Console is disabled. ASSIST_CONSOLE_KEY is not set.' });
+function createAssistSession(user) {
+    compactAssistSessions();
+    const token = crypto.randomBytes(32).toString('hex');
+    assistSessions.set(token, {
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        expiresAt: Date.now() + SESSION_TTL_MS
+    });
+    return token;
+}
+
+function readAssistSessionToken(req) {
+    return String(req.headers['x-assist-session'] || req.query?.session || '').trim();
+}
+
+function requireAssistSession(req, res, next) {
+    compactAssistSessions();
+    const token = readAssistSessionToken(req);
+    if (!token) {
+        return res.status(401).json({ error: 'Assist session required.' });
     }
 
-    const provided = readAssistKey(req);
-    if (!provided || provided !== expected) {
-        return res.status(403).json({ error: 'Invalid assist key.' });
+    const session = assistSessions.get(token);
+    if (!session || session.expiresAt <= Date.now()) {
+        assistSessions.delete(token);
+        return res.status(401).json({ error: 'Assist session expired. Log in again.' });
     }
 
+    req.assistSession = session;
+    req.assistSessionToken = token;
     return next();
+}
+
+function getAssistPasswordHash(data) {
+    return data?.settings?.assistPasswordHash || '';
+}
+
+async function verifyAssistPassword(data, providedPassword) {
+    const hash = getAssistPasswordHash(data);
+    if (!hash) {
+        return { configured: false, valid: true };
+    }
+
+    if (!providedPassword) {
+        return { configured: true, valid: false };
+    }
+
+    const valid = await auth.verifyPassword(providedPassword, hash);
+    return { configured: true, valid };
 }
 
 function dedupeBy(list, keyFn) {
@@ -36,20 +79,108 @@ function dedupeBy(list, keyFn) {
     return [...map.values()];
 }
 
-router.get('/status', requireAssistKey, (req, res) => {
-    res.json({ ok: true });
+router.post('/login', async (req, res) => {
+    try {
+        const username = String(req.body?.username || '').trim();
+        const password = String(req.body?.password || '');
+        const assistPassword = String(req.body?.assistPassword || '');
+
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password are required.' });
+        }
+
+        const data = await loadDb();
+        const user = (data.users || []).find((u) => u.username === username);
+        if (!user) {
+            return res.status(401).json({ error: 'Invalid credentials.' });
+        }
+
+        const passwordValid = await auth.verifyPassword(password, user.passwordHash);
+        if (!passwordValid) {
+            return res.status(401).json({ error: 'Invalid credentials.' });
+        }
+
+        if (user.role !== 'admin') {
+            return res.status(403).json({ error: 'Assist Console requires an admin account.' });
+        }
+
+        const assistCheck = await verifyAssistPassword(data, assistPassword);
+        if (!assistCheck.valid) {
+            return res.status(401).json({
+                error: assistCheck.configured
+                    ? 'Invalid assist password.'
+                    : 'Assist password is not set yet. Set it after login.'
+            });
+        }
+
+        const sessionToken = createAssistSession(user);
+
+        return res.json({
+            ok: true,
+            sessionToken,
+            sessionExpiresInSeconds: Math.floor(SESSION_TTL_MS / 1000),
+            assistPasswordConfigured: assistCheck.configured,
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role
+            }
+        });
+    } catch (err) {
+        console.error('Assist login failed:', err);
+        return res.status(500).json({ error: err.message || 'Assist login failed.' });
+    }
 });
 
-router.get('/clients', requireAssistKey, (req, res) => {
+router.post('/password', requireAssistSession, async (req, res) => {
+    try {
+        const nextPassword = String(req.body?.password || '');
+        if (nextPassword.length < 6) {
+            return res.status(400).json({ error: 'Assist password must be at least 6 characters.' });
+        }
+
+        const data = await loadDb();
+        const passwordHash = await auth.hashPassword(nextPassword);
+        data.settings = {
+            ...(data.settings || {}),
+            assistPasswordHash: passwordHash
+        };
+
+        await saveDb(data);
+        return res.json({ ok: true, message: 'Assist password updated.' });
+    } catch (err) {
+        console.error('Failed to update assist password:', err);
+        return res.status(500).json({ error: err.message || 'Failed to update assist password.' });
+    }
+});
+
+router.post('/logout', requireAssistSession, (req, res) => {
+    assistSessions.delete(req.assistSessionToken);
+    return res.json({ ok: true });
+});
+
+router.get('/status', requireAssistSession, (req, res) => {
+    res.json({
+        ok: true,
+        user: {
+            userId: req.assistSession.userId,
+            username: req.assistSession.username,
+            role: req.assistSession.role
+        }
+    });
+});
+
+router.get('/clients', requireAssistSession, (req, res) => {
     const clients = diagnosticsStore.listClientSnapshots();
     res.json({
         clients,
         count: clients.length,
-        staleAfterSeconds: Math.floor(diagnosticsStore.CLIENT_STALE_MS / 1000)
+        staleAfterSeconds: Math.floor(diagnosticsStore.CLIENT_STALE_MS / 1000),
+        users: [...new Set(clients.map((client) => client.sessionName || client.username).filter(Boolean))].sort((a, b) => a.localeCompare(b))
     });
 });
 
-router.get('/content-pack/export', requireAssistKey, async (req, res) => {
+    router.get('/content-pack/export', requireAssistSession, async (req, res) => {
     try {
         const db = await loadDb();
         const payload = {
@@ -71,7 +202,7 @@ router.get('/content-pack/export', requireAssistKey, async (req, res) => {
     }
 });
 
-router.post('/content-pack/import', requireAssistKey, async (req, res) => {
+router.post('/content-pack/import', requireAssistSession, async (req, res) => {
     try {
         const incoming = req.body || {};
         const pack = incoming?.kind === 'calibreviewer-content-pack' ? incoming : incoming?.pack;

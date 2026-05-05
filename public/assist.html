@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CalibreViewer Assist Console</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    body {
+      background: radial-gradient(circle at 20% 20%, #141628, #090a12 65%);
+      overflow: auto;
+    }
+
+    .assist-shell {
+      max-width: 1100px;
+      margin: 24px auto;
+      padding: 0 16px 24px;
+    }
+
+    .assist-header {
+      border: 1px solid var(--color-border-light);
+      border-radius: var(--radius-lg);
+      background: rgba(10, 12, 24, 0.9);
+      padding: 18px;
+      margin-bottom: 12px;
+    }
+
+    .assist-title {
+      font-family: 'Outfit', 'Inter', sans-serif;
+      font-size: 1.8rem;
+      margin-bottom: 6px;
+    }
+
+    .assist-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: 1.4fr 1fr;
+    }
+
+    .assist-card {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-lg);
+      background: rgba(16, 18, 28, 0.95);
+      padding: 14px;
+    }
+
+    .assist-card h3 {
+      margin-bottom: 8px;
+    }
+
+    .assist-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .assist-input {
+      background: var(--color-bg-tertiary);
+      color: var(--color-text-primary);
+      border: 1px solid var(--color-border-light);
+      border-radius: var(--radius-sm);
+      padding: 8px 10px;
+      width: 340px;
+      max-width: 100%;
+    }
+
+    .assist-clients {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+      max-height: 560px;
+      overflow: auto;
+    }
+
+    .assist-client {
+      border: 1px solid var(--color-border);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      background: rgba(26, 26, 37, 0.92);
+    }
+
+    .assist-client-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+
+    .assist-muted {
+      color: var(--color-text-muted);
+      font-size: 0.84rem;
+    }
+
+    .assist-meta {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--color-text-secondary);
+      font-size: 0.82rem;
+    }
+
+    @media (max-width: 900px) {
+      .assist-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="assist-shell">
+    <section class="assist-header">
+      <div class="assist-title">Assist Console</div>
+      <p class="assist-muted">Private support console. Login with an admin account for this instance.</p>
+    </section>
+
+    <div class="assist-grid">
+      <section class="assist-card">
+        <h3>Instance Login</h3>
+        <div class="assist-row">
+          <input id="assist-username" type="text" class="assist-input" placeholder="Admin username">
+          <input id="assist-password" type="password" class="assist-input" placeholder="Admin password">
+          <input id="assist-access-password" type="password" class="assist-input" placeholder="Assist password (set once, then required)">
+        </div>
+        <div class="assist-row">
+          <button id="assist-connect" class="btn btn-primary">Login</button>
+          <button id="assist-logout" class="btn btn-secondary">Logout</button>
+        </div>
+        <p id="assist-status" class="assist-muted">Not connected.</p>
+      </section>
+
+      <section class="assist-card">
+        <h3>Assist Password</h3>
+        <p class="assist-muted" style="margin-bottom:8px;">Set/change the dedicated Assist password from inside this EXE.</p>
+        <div class="assist-row">
+          <input id="assist-new-password" type="password" class="assist-input" placeholder="New assist password (min 6 chars)">
+          <button id="assist-save-password" class="btn btn-secondary">Save Password</button>
+        </div>
+        <p id="assist-password-status" class="assist-muted">Not configured yet.</p>
+      </section>
+
+      <section class="assist-card">
+        <h3>Client Diagnostics</h3>
+        <div class="assist-row">
+          <button id="assist-refresh" class="btn btn-secondary">Refresh</button>
+          <select id="assist-user-filter" class="assist-input" style="width: 260px;">
+            <option value="">All users</option>
+          </select>
+          <label class="assist-muted" style="display:flex;align-items:center;gap:6px;">
+            <input id="assist-auto" type="checkbox" checked>
+            Auto refresh (10s)
+          </label>
+        </div>
+        <div id="assist-clients" class="assist-clients"></div>
+      </section>
+
+      <section class="assist-card">
+        <h3>Content Migration</h3>
+        <p class="assist-muted" style="margin-bottom:8px;">Export/import setup packs outside the user app.</p>
+        <div class="assist-row">
+          <button id="assist-export" class="btn btn-primary">Export Content Pack</button>
+          <button id="assist-import-btn" class="btn btn-secondary">Import Content Pack</button>
+        </div>
+        <div class="assist-row">
+          <label class="assist-muted" style="display:flex;align-items:center;gap:6px;">
+            <input id="assist-merge" type="checkbox" checked>
+            Merge instead of replace
+          </label>
+          <label class="assist-muted" style="display:flex;align-items:center;gap:6px;">
+            <input id="assist-settings" type="checkbox" checked>
+            Include settings
+          </label>
+        </div>
+        <input id="assist-import-file" type="file" accept="application/json" style="display:none;">
+        <p id="assist-migrate-status" class="assist-muted">Ready.</p>
+      </section>
+    </div>
+  </div>
+
+  <script src="/js/assist.js"></script>
+</body>
+</html>
