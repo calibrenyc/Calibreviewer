@@ -1,12 +1,217 @@
 /**
- * NodeCast TV Application Entry Point
+ * CalibreViewer Application Entry Point
  */
+
+const THEME_COLORS_STORAGE_KEY = 'themeColors';
+const UI_MODE_STORAGE_KEY = 'uiMode';
+const KEYBOARD_ONLY_MODE_STORAGE_KEY = 'keyboardOnlyMode';
+
+const DEFAULT_THEME_COLORS = {
+    '--color-bg-primary': '#0a0a0f',
+    '--color-bg-secondary': '#12121a',
+    '--color-bg-tertiary': '#1a1a25',
+    '--color-bg-hover': '#22222f',
+    '--color-bg-active': '#2a2a3a',
+    '--color-accent': '#6366f1',
+    '--color-accent-hover': '#818cf8',
+    '--color-success': '#10b981',
+    '--color-warning': '#f59e0b',
+    '--color-error': '#ef4444',
+    '--color-text-primary': '#f1f1f5',
+    '--color-text-secondary': '#a1a1aa',
+    '--color-text-muted': '#71717a',
+    '--color-border': '#27272a',
+    '--color-border-light': '#3f3f46'
+};
+
+function normalizeHexColor(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
+    if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) return null;
+    return normalized.toLowerCase();
+}
+
+function hexToRgb(hex) {
+    const normalized = normalizeHexColor(hex);
+    if (!normalized) return null;
+
+    const value = normalized.slice(1);
+    return {
+        r: parseInt(value.slice(0, 2), 16),
+        g: parseInt(value.slice(2, 4), 16),
+        b: parseInt(value.slice(4, 6), 16)
+    };
+}
+
+function applyThemeColors(themeColors = {}) {
+    const root = document.documentElement;
+    const merged = { ...DEFAULT_THEME_COLORS, ...(themeColors || {}) };
+
+    Object.entries(merged).forEach(([cssVar, color]) => {
+        const normalized = normalizeHexColor(color);
+        if (normalized) {
+            root.style.setProperty(cssVar, normalized);
+        }
+    });
+
+    // Recalculate dependent variables so glow/dim/glass stay aligned with user-selected colors.
+    const accent = hexToRgb(merged['--color-accent']);
+    if (accent) {
+        root.style.setProperty('--color-accent-dim', `rgba(${accent.r}, ${accent.g}, ${accent.b}, 0.2)`);
+        root.style.setProperty('--shadow-glow', `0 0 20px rgba(${accent.r}, ${accent.g}, ${accent.b}, 0.3)`);
+    }
+
+    const bgSecondary = hexToRgb(merged['--color-bg-secondary']);
+    if (bgSecondary) {
+        root.style.setProperty('--glass-bg', `rgba(${bgSecondary.r}, ${bgSecondary.g}, ${bgSecondary.b}, 0.8)`);
+    }
+}
+
+function normalizeUiMode(value) {
+    return value === 'tv' ? 'tv' : 'desktop';
+}
+
+function applyInterfaceMode(mode = 'desktop') {
+    const normalized = normalizeUiMode(mode);
+    document.body.classList.toggle('ui-mode-tv', normalized === 'tv');
+    document.body.classList.toggle('ui-mode-desktop', normalized === 'desktop');
+    localStorage.setItem(UI_MODE_STORAGE_KEY, normalized);
+    window.dispatchEvent(new CustomEvent('ui-mode-changed', {
+        detail: { mode: normalized }
+    }));
+    return normalized;
+}
+
+function normalizeKeyboardOnlyMode(value) {
+    return value === true || value === 'true';
+}
+
+function applyKeyboardOnlyMode(enabled = false) {
+    const normalized = normalizeKeyboardOnlyMode(enabled);
+    document.body.classList.toggle('keyboard-only-mode', normalized);
+    localStorage.setItem(KEYBOARD_ONLY_MODE_STORAGE_KEY, normalized ? 'true' : 'false');
+    window.dispatchEvent(new CustomEvent('keyboard-only-mode-changed', {
+        detail: { enabled: normalized }
+    }));
+    return normalized;
+}
+
+window.DEFAULT_THEME_COLORS = DEFAULT_THEME_COLORS;
+window.THEME_COLORS_STORAGE_KEY = THEME_COLORS_STORAGE_KEY;
+window.applyThemeColors = applyThemeColors;
+window.applyInterfaceMode = applyInterfaceMode;
+window.applyKeyboardOnlyMode = applyKeyboardOnlyMode;
+
+function loadThemeFromLocalStorage() {
+    try {
+        const raw = localStorage.getItem(THEME_COLORS_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        applyThemeColors(parsed);
+    } catch {
+        // ignore malformed local theme cache
+    }
+}
+
+function shouldTrackRequest(input) {
+    try {
+        const rawUrl = typeof input === 'string' ? input : input?.url;
+        if (!rawUrl) return false;
+
+        const url = new URL(rawUrl, window.location.origin);
+        const path = url.pathname;
+
+        // Track API work by default, but exclude high-frequency media stream routes
+        // to avoid a permanently visible indicator during playback.
+        if (!path.startsWith('/api/')) return false;
+
+        const excludedPrefixes = [
+            '/api/transcode',
+            '/api/remux',
+            '/api/subtitle',
+            '/api/proxy/stream'
+        ];
+
+        if (excludedPrefixes.some(prefix => path.startsWith(prefix))) {
+            return false;
+        }
+
+        if (path.includes('/proxy/xtream/') && path.includes('/stream/')) {
+            return false;
+        }
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function installGlobalActivityTracker() {
+    const indicator = document.getElementById('global-activity-indicator');
+    if (!indicator) return;
+
+    let pendingCount = 0;
+    let hideTimer = null;
+
+    const show = () => {
+        if (hideTimer) {
+            clearTimeout(hideTimer);
+            hideTimer = null;
+        }
+        indicator.classList.add('active');
+        indicator.setAttribute('aria-hidden', 'false');
+    };
+
+    const hide = () => {
+        if (hideTimer) {
+            clearTimeout(hideTimer);
+        }
+        // Small delay to reduce flicker for very short requests.
+        hideTimer = setTimeout(() => {
+            if (pendingCount === 0) {
+                indicator.classList.remove('active');
+                indicator.setAttribute('aria-hidden', 'true');
+            }
+        }, 180);
+    };
+
+    const begin = () => {
+        pendingCount += 1;
+        show();
+    };
+
+    const end = () => {
+        pendingCount = Math.max(0, pendingCount - 1);
+        if (pendingCount === 0) {
+            hide();
+        }
+    };
+
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (...args) => {
+        const track = shouldTrackRequest(args[0]);
+        if (track) begin();
+
+        return originalFetch(...args)
+            .finally(() => {
+                if (track) end();
+            });
+    };
+}
 
 class App {
     constructor() {
         this.currentPage = 'home';
         this.pages = {};
         this.currentUser = null;
+        this.keyboardOnlyMode = false;
+        this.keyboardNavSectionIndex = 0;
+        this.keyboardNavItemIndex = 0;
+        this.keyboardNavSections = [];
+        this.handleKeyboardOnlyNavigation = this.handleKeyboardOnlyNavigation.bind(this);
+        this.syncKeyboardOnlyModeFromEvent = this.syncKeyboardOnlyModeFromEvent.bind(this);
 
         // Initialize components
         this.player = new VideoPlayer();
@@ -29,6 +234,10 @@ class App {
     async init() {
         // Check authentication first
         await this.checkAuth();
+
+        await this.loadAndApplyThemeFromServer();
+
+        this.installKeyboardOnlyNavigation();
 
         // Mobile menu toggle
         const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
@@ -161,10 +370,243 @@ class App {
         const initialPage = hash && this.pages[hash] ? hash : 'home';
         this.navigateTo(initialPage, true); // true = replace history (don't add)
 
-        console.log('NodeCast TV initialized');
+        console.log('CalibreViewer initialized');
+    }
+
+    installKeyboardOnlyNavigation() {
+        this.keyboardOnlyMode = document.body.classList.contains('keyboard-only-mode');
+        window.addEventListener('keyboard-only-mode-changed', this.syncKeyboardOnlyModeFromEvent);
+        document.addEventListener('keydown', this.handleKeyboardOnlyNavigation, true);
+
+        if (this.keyboardOnlyMode) {
+            this.resetKeyboardFocus();
+        }
+    }
+
+    syncKeyboardOnlyModeFromEvent(event) {
+        this.keyboardOnlyMode = !!event?.detail?.enabled;
+        if (this.keyboardOnlyMode) {
+            this.resetKeyboardFocus();
+        } else {
+            this.clearKeyboardFocusStyles();
+        }
+    }
+
+    isTypingTarget(target) {
+        if (!target) return false;
+        const tag = target.tagName;
+        return target.isContentEditable || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    }
+
+    clearKeyboardFocusStyles() {
+        document.querySelectorAll('.keyboard-nav-focus').forEach(el => el.classList.remove('keyboard-nav-focus'));
+    }
+
+    getFocusableElements(container) {
+        if (!container) return [];
+
+        return Array.from(container.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        )).filter(el => {
+            if (!el) return false;
+            if (el.closest('.hidden')) return false;
+            if (el.closest('.page') && !el.closest('.page').classList.contains('active')) return false;
+            if (el.offsetParent === null && el !== document.activeElement) return false;
+            return true;
+        });
+    }
+
+    getKeyboardSections() {
+        const activePage = document.querySelector('.page.active');
+        const sectionSelectors = [
+            '#navbar-menu',
+            '.home-layout .sidebar-header',
+            '.home-layout #channel-list',
+            '.home-layout .player-section',
+            '#page-guide .guide-controls',
+            '#page-guide #epg-grid',
+            '#page-movies .movies-controls',
+            '#page-movies #movies-grid',
+            '#page-series .series-controls',
+            '#page-series #series-grid',
+            '#page-settings .tabs',
+            '#page-settings .tab-content.active',
+            '#page-watch .watch-top-bar',
+            '#page-watch .watch-bottom-bar',
+            '#page-watch #watch-details'
+        ];
+
+        const sections = sectionSelectors
+            .map(selector => document.querySelector(selector))
+            .filter(Boolean)
+            .filter(section => {
+                const page = section.closest('.page');
+                if (!page) return true;
+                return page.classList.contains('active') || page === activePage;
+            })
+            .filter(section => this.getFocusableElements(section).length > 0);
+
+        return sections;
+    }
+
+    focusKeyboardNavTarget(sectionIndex, itemIndex) {
+        this.keyboardNavSections = this.getKeyboardSections();
+        if (!this.keyboardNavSections.length) {
+            this.clearKeyboardFocusStyles();
+            return;
+        }
+
+        this.keyboardNavSectionIndex = Math.max(0, Math.min(sectionIndex, this.keyboardNavSections.length - 1));
+        const section = this.keyboardNavSections[this.keyboardNavSectionIndex];
+        const items = this.getFocusableElements(section);
+
+        if (!items.length) return;
+
+        this.keyboardNavItemIndex = Math.max(0, Math.min(itemIndex, items.length - 1));
+        const target = items[this.keyboardNavItemIndex];
+        if (!target) return;
+
+        this.clearKeyboardFocusStyles();
+        target.classList.add('keyboard-nav-focus');
+        target.focus({ preventScroll: false });
+        target.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    }
+
+    moveKeyboardNavItem(delta) {
+        const section = this.keyboardNavSections[this.keyboardNavSectionIndex];
+        const items = this.getFocusableElements(section);
+        if (!items.length) return;
+
+        let nextIndex = this.keyboardNavItemIndex + delta;
+        if (nextIndex < 0) nextIndex = items.length - 1;
+        if (nextIndex >= items.length) nextIndex = 0;
+
+        this.focusKeyboardNavTarget(this.keyboardNavSectionIndex, nextIndex);
+    }
+
+    moveKeyboardNavSection(delta) {
+        const sections = this.getKeyboardSections();
+        if (!sections.length) return;
+
+        let nextSection = this.keyboardNavSectionIndex + delta;
+        if (nextSection < 0) nextSection = sections.length - 1;
+        if (nextSection >= sections.length) nextSection = 0;
+
+        this.focusKeyboardNavTarget(nextSection, 0);
+    }
+
+    resetKeyboardFocus() {
+        this.focusKeyboardNavTarget(0, 0);
+    }
+
+    handleKeyboardOnlyNavigation(event) {
+        if (!this.keyboardOnlyMode) return;
+        if (!document.hasFocus()) return;
+        if (event.ctrlKey || event.altKey || event.metaKey) return;
+
+        if (this.isTypingTarget(event.target) && event.key !== 'Escape') return;
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            this.navigateTo('settings');
+            this.resetKeyboardFocus();
+            return;
+        }
+
+        if (event.key === 'Backspace') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+
+            if (this.currentPage === 'watch') {
+                this.pages.watch?.goBack?.();
+                return;
+            }
+
+            if (this.currentPage === 'live') {
+                this.player?.stop?.();
+                this.navigateTo('home');
+                this.resetKeyboardFocus();
+                return;
+            }
+
+            history.back();
+            return;
+        }
+
+        switch (event.key) {
+            case 'Tab':
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.moveKeyboardNavSection(event.shiftKey ? -1 : 1);
+                return;
+            case 'ArrowLeft':
+            case 'ArrowUp':
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.moveKeyboardNavItem(-1);
+                return;
+            case 'ArrowRight':
+            case 'ArrowDown':
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                this.moveKeyboardNavItem(1);
+                return;
+            case 'Enter': {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                const target = document.activeElement;
+                if (target?.click) {
+                    target.click();
+                }
+                return;
+            }
+            default:
+                return;
+        }
+    }
+
+    async loadAndApplyThemeFromServer() {
+        try {
+            const settings = await API.settings.get();
+            if (settings?.themeColors) {
+                applyThemeColors(settings.themeColors);
+                localStorage.setItem(THEME_COLORS_STORAGE_KEY, JSON.stringify(settings.themeColors));
+            }
+
+            if (settings?.uiMode) {
+                const normalizedMode = applyInterfaceMode(settings.uiMode);
+                if (this.player?.settings) {
+                    this.player.settings.uiMode = normalizedMode;
+                }
+            }
+
+            if (typeof settings?.keyboardOnlyMode !== 'undefined') {
+                const enabled = applyKeyboardOnlyMode(settings.keyboardOnlyMode === true);
+                if (this.player?.settings) {
+                    this.player.settings.keyboardOnlyMode = enabled;
+                }
+            }
+        } catch (err) {
+            console.warn('Failed to load theme settings from server:', err.message);
+        }
     }
 
     async checkAuth() {
+        // Support SSO/OIDC callback redirect pattern: /?token=<jwt>
+        // Persist it to localStorage so the rest of the app can authenticate normally.
+        try {
+            const url = new URL(window.location.href);
+            const tokenFromUrl = url.searchParams.get('token');
+            if (tokenFromUrl) {
+                localStorage.setItem('authToken', tokenFromUrl);
+                url.searchParams.delete('token');
+                window.history.replaceState(window.history.state, document.title, url.pathname + url.search + url.hash);
+            }
+        } catch (e) {
+            console.warn('Failed to process SSO token from URL:', e);
+        }
+
         const token = localStorage.getItem('authToken');
 
         if (!token) {
@@ -275,11 +717,19 @@ class App {
         if (this.pages[pageName]?.show) {
             this.pages[pageName].show();
         }
+
+        if (this.keyboardOnlyMode) {
+            requestAnimationFrame(() => this.resetKeyboardFocus());
+        }
     }
 }
 
 // Start app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
+    loadThemeFromLocalStorage();
+    applyInterfaceMode(localStorage.getItem(UI_MODE_STORAGE_KEY) || 'desktop');
+    applyKeyboardOnlyMode(localStorage.getItem(KEYBOARD_ONLY_MODE_STORAGE_KEY) || 'false');
+    installGlobalActivityTracker();
     window.app = new App();
 
     // Fetch and display version badge

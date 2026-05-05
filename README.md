@@ -62,6 +62,25 @@ nodecast-tv is a modern, web-based IPTV player featuring Live TV, EPG, Movies (V
 
 4.  Open your browser at `http://localhost:3000`.
 
+### Desktop App (Electron)
+
+This repo also includes a minimal **Electron desktop wrapper** (CalibreViewer) that starts the local server and opens it in a desktop window.
+
+**Prerequisite:** Install Node.js (includes `npm`).
+
+Run the desktop app:
+```bash
+npm install
+npm run desktop
+```
+
+Build a Windows installer:
+```bash
+npm run dist:win
+```
+
+**Desktop data location:** In the desktop app, persistent files (SQLite DB, JSON DB, cache, transcode cache) are stored under Electron's per-user app data directory (not inside the app install folder).
+
 ### Docker Deployment
 
 You can run nodecast-tv easily using Docker.

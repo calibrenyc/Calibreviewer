@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - NodeCast TV</title>
+    <title>Login - CalibreViewer</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     <link rel="stylesheet" href="css/main.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -130,6 +130,28 @@
             transform: none;
         }
 
+        .remember-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: -2px 0 var(--space-lg);
+            font-size: 13px;
+            color: var(--color-text-secondary);
+        }
+
+        .remember-row label {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .remember-row input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--color-accent);
+        }
+
         .error-message {
             background: rgba(239, 68, 68, 0.1);
             color: var(--color-error);
@@ -159,6 +181,79 @@
         .setup-message.show {
             display: block;
         }
+
+        .saved-logins {
+            margin-top: var(--space-lg);
+            padding-top: var(--space-lg);
+            border-top: 1px solid var(--color-border);
+        }
+
+        .saved-logins.hidden {
+            display: none;
+        }
+
+        .saved-logins h3 {
+            margin: 0 0 var(--space-sm);
+            font-size: 14px;
+            color: var(--color-text-secondary);
+            font-weight: 600;
+        }
+
+        .saved-login-list {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-sm);
+        }
+
+        .saved-login-row {
+            display: flex;
+            gap: var(--space-sm);
+        }
+
+        .saved-login-btn {
+            flex: 1;
+            padding: 10px 12px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-border);
+            background: var(--color-bg-tertiary);
+            color: var(--color-text-primary);
+            cursor: pointer;
+            text-align: left;
+            transition: all 0.2s;
+        }
+
+        .saved-login-btn:hover {
+            border-color: var(--color-accent);
+            background: var(--color-bg-hover);
+        }
+
+        .saved-login-btn .saved-login-user {
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        .saved-login-btn .saved-login-meta {
+            font-size: 12px;
+            color: var(--color-text-muted);
+            margin-top: 2px;
+        }
+
+        .saved-login-remove {
+            flex: 0 0 auto;
+            padding: 0 10px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-border);
+            background: transparent;
+            color: var(--color-text-muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .saved-login-remove:hover {
+            color: var(--color-error);
+            border-color: var(--color-error);
+        }
     </style>
 </head>
 
@@ -171,7 +266,7 @@
                     <path
                         d="M169.71,87.87c-4.77,0-9.1,1.88-12.31,4.92L35.3,22.3c.35-1.4.56-2.86.56-4.37C35.86,8.03,27.83,0,17.93,0S0,8.03,0,17.93c0,8.44,5.84,15.5,13.69,17.4v140c-7.71,2.01-13.41,8.99-13.41,17.33,0,9.9,8.03,17.93,17.93,17.93s17.93-8.03,17.93-17.93c0-1.56-.22-3.07-.6-4.51l121.21-69.98c3.26,3.42,7.86,5.55,12.95,5.55,9.9,0,17.93-8.03,17.93-17.93s-8.03-17.93-17.93-17.93ZM152.78,99.92c-.14.41-.27.83-.38,1.25h-51.47l-44.18-24.72L30.4,30.8c.33-.32.64-.65.94-.99l121.45,70.12ZM22.17,175.2V35.33c.23-.05.45-.11.67-.17l26.35,45.65-.34,50.04-25.74,44.59c-.31-.09-.63-.17-.95-.24ZM31.52,180.69c-.27-.3-.55-.6-.84-.89l25.48-44.13,44.64-25.78h51.47c.07.32.15.63.24.94L31.52,180.69Z" />
                 </svg>
-                <h1>nodecast-tv</h1>
+                <h1>CalibreViewer</h1>
                 <p id="login-subtitle">Sign in to continue</p>
             </div>
 
@@ -191,6 +286,13 @@
                     <label for="password">Password</label>
                     <input type="password" id="password" name="password" required autocomplete="current-password"
                         minlength="6" placeholder="Enter your password">
+                </div>
+
+                <div class="remember-row">
+                    <label for="remember-me">
+                        <input type="checkbox" id="remember-me" checked>
+                        Remember me on this device
+                    </label>
                 </div>
 
                 <button type="submit" class="btn-login" id="submit-btn">Sign In</button>
@@ -214,6 +316,11 @@
                 Sign in with SSO
             </button>
 
+            <div id="saved-logins" class="saved-logins hidden">
+                <h3>Saved Logins</h3>
+                <div id="saved-login-list" class="saved-login-list"></div>
+            </div>
+
             <style>
                 #btn-sso-login:hover {
                     background: var(--color-bg-tertiary) !important;
@@ -226,6 +333,163 @@
     </div>
 
     <script>
+        const SAVED_LOGINS_KEY = 'savedLogins';
+        const REMEMBER_ME_KEY = 'rememberLoginEnabled';
+        const LAST_LOGIN_USER_KEY = 'lastLoginUser';
+        const MAX_SAVED_LOGINS = 6;
+
+        function getRememberMeEnabled() {
+            const saved = localStorage.getItem(REMEMBER_ME_KEY);
+            return saved === null ? true : saved === 'true';
+        }
+
+        function setRememberMeEnabled(value) {
+            localStorage.setItem(REMEMBER_ME_KEY, value ? 'true' : 'false');
+        }
+
+        function getSavedLogins() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(SAVED_LOGINS_KEY) || '[]');
+                if (!Array.isArray(parsed)) return [];
+                return parsed.filter(item => item && item.username && item.token);
+            } catch {
+                return [];
+            }
+        }
+
+        function setSavedLogins(entries) {
+            localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(entries.slice(0, MAX_SAVED_LOGINS)));
+        }
+
+        function upsertSavedLogin(username, token) {
+            const now = new Date().toISOString();
+            const existing = getSavedLogins().filter(entry => entry.username !== username);
+            existing.unshift({ username, token, lastUsedAt: now });
+            setSavedLogins(existing);
+        }
+
+        function removeSavedLogin(username) {
+            const next = getSavedLogins().filter(entry => entry.username !== username);
+            setSavedLogins(next);
+            renderSavedLogins();
+        }
+
+        function clearSavedLogins() {
+            setSavedLogins([]);
+            renderSavedLogins();
+        }
+
+        async function validateToken(token) {
+            const response = await fetch('/api/auth/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error('Session expired. Please sign in again.');
+            }
+
+            return response.json();
+        }
+
+        async function quickLogin(entry) {
+            const errorMessage = document.getElementById('error-message');
+            errorMessage.classList.remove('show');
+            errorMessage.textContent = '';
+
+            try {
+                await validateToken(entry.token);
+                localStorage.setItem('authToken', entry.token);
+                localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+                if (getRememberMeEnabled()) {
+                    upsertSavedLogin(entry.username, entry.token);
+                }
+                window.location.replace('/');
+            } catch (err) {
+                removeSavedLogin(entry.username);
+                errorMessage.textContent = err.message;
+                errorMessage.classList.add('show');
+            }
+        }
+
+        function formatLastUsed(value) {
+            if (!value) return 'Saved login';
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return 'Saved login';
+            return `Last used ${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        }
+
+        function renderSavedLogins() {
+            const container = document.getElementById('saved-logins');
+            const list = document.getElementById('saved-login-list');
+            if (!container || !list) return;
+
+            const entries = getSavedLogins();
+            if (!entries.length || isSetupMode) {
+                container.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+
+            container.classList.remove('hidden');
+            list.innerHTML = '';
+
+            entries.forEach((entry) => {
+                const row = document.createElement('div');
+                row.className = 'saved-login-row';
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'saved-login-btn';
+                btn.title = `Sign in as ${entry.username}`;
+
+                const user = document.createElement('div');
+                user.className = 'saved-login-user';
+                user.textContent = entry.username;
+
+                const meta = document.createElement('div');
+                meta.className = 'saved-login-meta';
+                meta.textContent = formatLastUsed(entry.lastUsedAt);
+
+                btn.appendChild(user);
+                btn.appendChild(meta);
+                btn.addEventListener('click', () => quickLogin(entry));
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'saved-login-remove';
+                removeBtn.title = `Remove ${entry.username}`;
+                removeBtn.textContent = 'Remove';
+                removeBtn.addEventListener('click', () => removeSavedLogin(entry.username));
+
+                row.appendChild(btn);
+                row.appendChild(removeBtn);
+                list.appendChild(row);
+            });
+        }
+
+        function hydrateRememberedState() {
+            const rememberCheckbox = document.getElementById('remember-me');
+            const usernameInput = document.getElementById('username');
+            if (!rememberCheckbox || !usernameInput) return;
+
+            rememberCheckbox.checked = getRememberMeEnabled();
+
+            const lastUser = localStorage.getItem(LAST_LOGIN_USER_KEY);
+            if (lastUser) {
+                usernameInput.value = lastUser;
+            }
+
+            rememberCheckbox.addEventListener('change', () => {
+                const enabled = rememberCheckbox.checked;
+                setRememberMeEnabled(enabled);
+                if (!enabled) {
+                    clearSavedLogins();
+                }
+            });
+        }
+
         // Start SSO Login
         document.getElementById('btn-sso-login').addEventListener('click', () => {
             window.location.href = '/api/auth/oidc/login';
@@ -260,8 +524,11 @@
                     document.querySelector('.sso-divider').style.display = 'none';
                     document.getElementById('btn-sso-login').style.display = 'none';
                 }
+
+                renderSavedLogins();
             } catch (err) {
                 console.error('Error checking setup status:', err);
+                renderSavedLogins();
             }
         }
 
@@ -271,6 +538,7 @@
 
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
+            const rememberMe = document.getElementById('remember-me').checked;
             const submitBtn = document.getElementById('submit-btn');
             const errorMessage = document.getElementById('error-message');
 
@@ -300,6 +568,12 @@
 
                 // Store token
                 localStorage.setItem('authToken', data.token);
+                localStorage.setItem(LAST_LOGIN_USER_KEY, username);
+                setRememberMeEnabled(rememberMe);
+
+                if (rememberMe) {
+                    upsertSavedLogin(username, data.token);
+                }
 
                 // Redirect to main app (replace history to prevent back button issues)
                 window.location.replace('/');
@@ -313,6 +587,7 @@
         });
 
         // Check setup status on load
+        hydrateRememberedState();
         checkSetupRequired();
     </script>
 </body>

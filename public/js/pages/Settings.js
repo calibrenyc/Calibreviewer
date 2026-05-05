@@ -2,6 +2,31 @@
  * Settings Page Controller
  */
 
+const THEME_COLOR_FIELDS = [
+    { cssVar: '--color-bg-primary', label: 'Background Primary' },
+    { cssVar: '--color-bg-secondary', label: 'Background Secondary' },
+    { cssVar: '--color-bg-tertiary', label: 'Background Tertiary' },
+    { cssVar: '--color-bg-hover', label: 'Background Hover' },
+    { cssVar: '--color-bg-active', label: 'Background Active' },
+    { cssVar: '--color-accent', label: 'Accent' },
+    { cssVar: '--color-accent-hover', label: 'Accent Hover' },
+    { cssVar: '--color-success', label: 'Success' },
+    { cssVar: '--color-warning', label: 'Warning' },
+    { cssVar: '--color-error', label: 'Error' },
+    { cssVar: '--color-text-primary', label: 'Text Primary' },
+    { cssVar: '--color-text-secondary', label: 'Text Secondary' },
+    { cssVar: '--color-text-muted', label: 'Text Muted' },
+    { cssVar: '--color-border', label: 'Border' },
+    { cssVar: '--color-border-light', label: 'Border Light' }
+];
+
+function normalizeThemeHex(value) {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().startsWith('#') ? value.trim() : `#${value.trim()}`;
+    if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) return null;
+    return normalized.toLowerCase();
+}
+
 class SettingsPage {
     constructor(app) {
         this.app = app;
@@ -23,11 +48,205 @@ class SettingsPage {
         // Transcoding settings
         this.initTranscodingSettings();
 
+        // Desktop local update checker
+        this.initLocalUpdateChecker();
+
+        // Theme color customizer
+        this.initThemeCustomizer();
+
         // User management (admin only)
         this.initUserManagement();
     }
 
+    async initThemeCustomizer() {
+        this.themeColorGrid = document.getElementById('theme-color-grid');
+        this.themeResetBtn = document.getElementById('theme-reset-btn');
+        this.themeStatus = document.getElementById('theme-status');
+
+        if (!this.themeColorGrid || !this.themeResetBtn || !this.themeStatus) return;
+
+        const defaults = window.DEFAULT_THEME_COLORS || {};
+        let serverTheme = {};
+
+        try {
+            const settings = await API.settings.get();
+            serverTheme = settings?.themeColors || {};
+        } catch (err) {
+            console.warn('[Theme] Failed to load theme from server, using defaults/local cache.', err.message);
+        }
+
+        this.themeColors = { ...defaults, ...serverTheme };
+
+        this.renderThemeColorControls();
+        window.applyThemeColors?.(this.themeColors);
+        this.themeStatus.textContent = 'Theme loaded';
+    }
+
+    renderThemeColorControls() {
+        if (!this.themeColorGrid) return;
+
+        this.themeColorGrid.innerHTML = '';
+
+        THEME_COLOR_FIELDS.forEach(field => {
+            const currentValue = normalizeThemeHex(this.themeColors[field.cssVar]) || '#000000';
+
+            const row = document.createElement('div');
+            row.className = 'theme-color-item';
+
+            const label = document.createElement('span');
+            label.className = 'theme-color-label';
+            label.textContent = field.label;
+
+            const control = document.createElement('div');
+            control.className = 'theme-color-control';
+
+            const colorInput = document.createElement('input');
+            colorInput.type = 'color';
+            colorInput.className = 'theme-color-input';
+            colorInput.value = currentValue;
+
+            const hexValue = document.createElement('span');
+            hexValue.className = 'theme-color-value';
+            hexValue.textContent = currentValue;
+
+            colorInput.addEventListener('input', () => {
+                const nextColor = normalizeThemeHex(colorInput.value);
+                if (!nextColor) return;
+
+                this.themeColors[field.cssVar] = nextColor;
+                hexValue.textContent = nextColor;
+                window.applyThemeColors?.(this.themeColors);
+                this.themeStatus.textContent = 'Previewing changes...';
+            });
+
+            colorInput.addEventListener('change', async () => {
+                await this.saveThemeColors();
+            });
+
+            control.appendChild(colorInput);
+            control.appendChild(hexValue);
+            row.appendChild(label);
+            row.appendChild(control);
+            this.themeColorGrid.appendChild(row);
+        });
+
+        this.themeResetBtn.onclick = async () => {
+            const defaults = window.DEFAULT_THEME_COLORS || {};
+            this.themeColors = { ...defaults };
+            window.applyThemeColors?.(this.themeColors);
+            this.renderThemeColorControls();
+            await this.saveThemeColors('Theme reset to defaults');
+        };
+    }
+
+    async saveThemeColors(successMessage = 'Theme saved') {
+        try {
+            this.themeStatus.textContent = 'Saving...';
+            this.app.player.settings.themeColors = { ...this.themeColors };
+            await this.app.player.saveSettings();
+            localStorage.setItem(window.THEME_COLORS_STORAGE_KEY || 'themeColors', JSON.stringify(this.themeColors));
+            this.themeStatus.textContent = successMessage;
+        } catch (err) {
+            console.error('[Theme] Failed to save theme colors:', err);
+            this.themeStatus.textContent = 'Failed to save theme';
+        }
+    }
+
+    initLocalUpdateChecker() {
+        const section = document.getElementById('desktop-update-section');
+        const repoInput = document.getElementById('update-repo');
+        const folderInput = document.getElementById('update-folder-path');
+        const selectBtn = document.getElementById('select-update-folder');
+        const checkBtn = document.getElementById('check-local-update');
+        const statusEl = document.getElementById('local-update-status');
+
+        if (!section || !repoInput || !folderInput || !selectBtn || !checkBtn || !statusEl) return;
+
+        const setStatus = (message, isError = false) => {
+            statusEl.textContent = message;
+            statusEl.style.color = isError ? 'var(--color-error)' : '';
+        };
+
+        // Browser mode fallback (non-Electron)
+        if (!window.desktopAPI) {
+            repoInput.value = 'Desktop mode only';
+            folderInput.value = 'Desktop mode only';
+            selectBtn.disabled = true;
+            checkBtn.disabled = true;
+            setStatus('Desktop update checker is available in the installed app only.');
+            return;
+        }
+
+        const loadMeta = async () => {
+            try {
+                const meta = await window.desktopAPI.getAppMeta();
+                repoInput.value = meta.updateRepo || 'calibrenyc/Calibreviewer';
+                folderInput.value = meta.updateFolder || '';
+                setStatus(`Current version: v${meta.appVersion} (${repoInput.value})`);
+            } catch (err) {
+                setStatus('Failed to load desktop update metadata.', true);
+            }
+        };
+
+        selectBtn.addEventListener('click', async () => {
+            selectBtn.disabled = true;
+            try {
+                const result = await window.desktopAPI.pickUpdateFolder();
+                if (result?.folderPath) {
+                    folderInput.value = result.folderPath;
+                }
+                setStatus(result?.canceled ? 'Folder selection canceled.' : 'Update folder saved.');
+            } catch (err) {
+                setStatus('Failed to select update folder.', true);
+            } finally {
+                selectBtn.disabled = false;
+            }
+        });
+
+        checkBtn.addEventListener('click', async () => {
+            checkBtn.disabled = true;
+            checkBtn.textContent = 'Checking...';
+            try {
+                let result = null;
+
+                if (window.desktopAPI.checkGithubUpdate) {
+                    result = await window.desktopAPI.checkGithubUpdate();
+                }
+
+                if (result?.repo) {
+                    repoInput.value = result.repo;
+                }
+
+                // Fallback to local folder check if GitHub check failed.
+                if (!result || result.error) {
+                    const localResult = await window.desktopAPI.checkLocalUpdate();
+                    if (localResult?.checkedFolder) {
+                        folderInput.value = localResult.checkedFolder;
+                    }
+                    if (!result) {
+                        result = localResult;
+                    } else {
+                        result.message = `${result.message} Fallback: ${localResult?.message || 'Local check completed.'}`;
+                    }
+                } else if (result?.downloadUrl) {
+                    result.message = `${result.message} Download: ${result.downloadUrl}`;
+                }
+
+                setStatus(result?.message || 'Update check completed.');
+            } catch (err) {
+                setStatus('Failed to check local updates.', true);
+            } finally {
+                checkBtn.disabled = false;
+                checkBtn.textContent = 'Check for Updates';
+            }
+        });
+
+        loadMeta();
+    }
+
     initPlayerSettings() {
+        const interfaceModeSelect = document.getElementById('setting-interface-mode');
+        const keyboardOnlyModeToggle = document.getElementById('setting-keyboard-only-mode');
         const arrowKeysToggle = document.getElementById('setting-arrow-keys');
         const overlayDurationInput = document.getElementById('setting-overlay-duration');
         const defaultVolumeSlider = document.getElementById('setting-default-volume');
@@ -37,6 +256,9 @@ class SettingsPage {
 
         // Load current settings
         if (this.app.player?.settings) {
+            const uiMode = this.app.player.settings.uiMode === 'tv' ? 'tv' : 'desktop';
+            if (interfaceModeSelect) interfaceModeSelect.value = uiMode;
+            if (keyboardOnlyModeToggle) keyboardOnlyModeToggle.checked = this.app.player.settings.keyboardOnlyMode === true;
             arrowKeysToggle.checked = this.app.player.settings.arrowKeysChangeChannel;
             overlayDurationInput.value = this.app.player.settings.overlayDuration;
             defaultVolumeSlider.value = this.app.player.settings.defaultVolume;
@@ -44,6 +266,36 @@ class SettingsPage {
             rememberVolumeToggle.checked = this.app.player.settings.rememberVolume;
             autoPlayNextToggle.checked = this.app.player.settings.autoPlayNextEpisode;
         }
+
+        const syncInterfaceModeSelect = () => {
+            if (!interfaceModeSelect) return;
+            interfaceModeSelect.value = document.body.classList.contains('ui-mode-tv') ? 'tv' : 'desktop';
+        };
+
+        syncInterfaceModeSelect();
+        window.addEventListener('ui-mode-changed', syncInterfaceModeSelect);
+
+        const syncKeyboardOnlyModeToggle = () => {
+            if (!keyboardOnlyModeToggle) return;
+            keyboardOnlyModeToggle.checked = document.body.classList.contains('keyboard-only-mode');
+        };
+
+        syncKeyboardOnlyModeToggle();
+        window.addEventListener('keyboard-only-mode-changed', syncKeyboardOnlyModeToggle);
+
+        interfaceModeSelect?.addEventListener('change', async () => {
+            const nextMode = interfaceModeSelect.value === 'tv' ? 'tv' : 'desktop';
+            window.applyInterfaceMode?.(nextMode);
+            this.app.player.settings.uiMode = nextMode;
+            await this.app.player.saveSettings();
+        });
+
+        keyboardOnlyModeToggle?.addEventListener('change', async () => {
+            const enabled = keyboardOnlyModeToggle.checked;
+            window.applyKeyboardOnlyMode?.(enabled);
+            this.app.player.settings.keyboardOnlyMode = enabled;
+            await this.app.player.saveSettings();
+        });
 
         // Arrow keys toggle
         arrowKeysToggle.addEventListener('change', () => {

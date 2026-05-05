@@ -12,7 +12,7 @@ const { Strategy: LocalStrategy } = require('passport-local');
 
 // JWT Secret - In production, use environment variable
 const JWT_SECRET = process.env.JWT_SECRET || 'nodecast-tv-secret-key-change-in-production';
-const JWT_EXPIRY = '24h';
+const JWT_EXPIRY = process.env.JWT_EXPIRY || '30d';
 
 /**
  * Hash password using bcrypt

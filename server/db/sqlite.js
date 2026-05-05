@@ -1,8 +1,9 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const { getDataDir } = require('../paths');
 
-const dataDir = path.join(__dirname, '..', '..', 'data');
+const dataDir = getDataDir();
 const dbPath = path.join(dataDir, 'content.db');
 
 // Ensure data directory exists

@@ -1,9 +1,10 @@
 const fs = require('fs/promises');
 const path = require('path');
 const { existsSync, mkdirSync } = require('fs');
+const { getDataDir } = require('./paths');
 
 // Ensure data directory exists (sync is fine for startup)
-const dataDir = path.join(__dirname, '..', 'data');
+const dataDir = getDataDir();
 if (!existsSync(dataDir)) {
   mkdirSync(dataDir, { recursive: true });
 }
@@ -83,7 +84,29 @@ function getDefaultSettings() {
     // Upscaling settings
     upscaleEnabled: false,
     upscaleMethod: 'hardware',    // hardware | software
-    upscaleTarget: '1080p'        // 1080p | 4k | 720p
+    upscaleTarget: '1080p',       // 1080p | 4k | 720p
+    // Theme colors
+    themeColors: getDefaultThemeColors()
+  };
+}
+
+function getDefaultThemeColors() {
+  return {
+    '--color-bg-primary': '#0a0a0f',
+    '--color-bg-secondary': '#12121a',
+    '--color-bg-tertiary': '#1a1a25',
+    '--color-bg-hover': '#22222f',
+    '--color-bg-active': '#2a2a3a',
+    '--color-accent': '#6366f1',
+    '--color-accent-hover': '#818cf8',
+    '--color-success': '#10b981',
+    '--color-warning': '#f59e0b',
+    '--color-error': '#ef4444',
+    '--color-text-primary': '#f1f1f5',
+    '--color-text-secondary': '#a1a1aa',
+    '--color-text-muted': '#71717a',
+    '--color-border': '#27272a',
+    '--color-border-light': '#3f3f46'
   };
 }
 

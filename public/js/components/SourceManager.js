@@ -20,6 +20,47 @@ class SourceManager {
         this.init();
     }
 
+    getAllVisibilitySummary() {
+        if (!this.treeData?.groups) return { total: 0, hidden: 0 };
+
+        let total = 0;
+        let hidden = 0;
+
+        this.treeData.groups.forEach(group => {
+            group.items.forEach(item => {
+                total += 1;
+                const key = `${item.type}:${item.id}`;
+                if (this.hiddenSet.has(key)) hidden += 1;
+            });
+        });
+
+        return { total, hidden };
+    }
+
+    updateToggleAllButton() {
+        const toggleBtn = document.getElementById('content-toggle-all');
+        if (!toggleBtn) return;
+
+        const { total, hidden } = this.getAllVisibilitySummary();
+
+        if (!total) {
+            toggleBtn.disabled = true;
+            toggleBtn.textContent = 'Check All';
+            return;
+        }
+
+        toggleBtn.disabled = false;
+        toggleBtn.textContent = hidden === 0 ? 'Uncheck All' : 'Check All';
+    }
+
+    async toggleAllVisibility() {
+        const { total, hidden } = this.getAllVisibilitySummary();
+        if (!total) return;
+
+        // If anything is hidden, "Check All" (show all). Otherwise "Uncheck All" (hide all).
+        await this.setAllVisibility(hidden > 0);
+    }
+
     init() {
         // Add source buttons
         document.getElementById('add-xtream').addEventListener('click', () => this.showAddModal('xtream'));
@@ -526,9 +567,9 @@ class SourceManager {
         // Source selection
         this.contentSourceSelect?.addEventListener('change', () => this.reloadContentTree());
 
-        // Show All / Hide All buttons
-        document.getElementById('content-show-all')?.addEventListener('click', () => this.setAllVisibility(true));
-        document.getElementById('content-hide-all')?.addEventListener('click', () => this.setAllVisibility(false));
+    // Check All / Uncheck All toggle
+    document.getElementById('content-toggle-all')?.addEventListener('click', () => this.toggleAllVisibility());
+    this.updateToggleAllButton();
 
         // Save Changes button
         document.getElementById('content-save')?.addEventListener('click', () => this.saveContentChanges());
@@ -557,9 +598,11 @@ class SourceManager {
     reloadContentTree() {
         const sourceId = this.contentSourceSelect?.value;
         if (!sourceId) {
+            this.treeData = null;
             const typeLabel = this.contentType === 'movies' ? 'movie categories' :
                 this.contentType === 'series' ? 'series categories' : 'groups and channels';
             this.contentTree.innerHTML = `<p class="hint">Select a source to view ${typeLabel}</p>`;
+            this.updateToggleAllButton();
             return;
         }
 
@@ -718,6 +761,7 @@ class SourceManager {
         if (!groups.length) {
             const msg = this.searchQuery ? 'No matches found' : 'No content found';
             this.contentTree.innerHTML = `<p class="hint">${msg}</p>`;
+            this.updateToggleAllButton();
             return;
         }
 
@@ -726,6 +770,8 @@ class SourceManager {
 
         // Attach event listeners
         this.attachTreeListeners(this.contentTree);
+
+        this.updateToggleAllButton();
     }
 
     /**
@@ -805,6 +851,8 @@ class SourceManager {
                 } else {
                     this.toggleVisibility(cb);
                 }
+
+                this.updateToggleAllButton();
             });
         });
     }
@@ -1023,15 +1071,16 @@ class SourceManager {
         if (!this.treeData || !this.treeData.groups) return;
 
         const saveBtn = document.getElementById('content-save');
-        const showAllBtn = document.querySelector('.content-actions button:first-child');
-        const hideAllBtn = document.querySelector('.content-actions button:nth-child(2)');
+        const toggleAllBtn = document.getElementById('content-toggle-all');
 
         // Disable buttons during operation
-        if (showAllBtn) showAllBtn.disabled = true;
-        if (hideAllBtn) hideAllBtn.disabled = true;
+        if (toggleAllBtn) {
+            toggleAllBtn.disabled = true;
+            toggleAllBtn.textContent = visible ? '⏳ Checking...' : '⏳ Unchecking...';
+        }
         if (saveBtn) {
             saveBtn.disabled = true;
-            saveBtn.textContent = visible ? '⏳ Showing all...' : '⏳ Hiding all...';
+            saveBtn.textContent = visible ? '⏳ Checking all...' : '⏳ Unchecking all...';
         }
 
         try {
@@ -1073,6 +1122,8 @@ class SourceManager {
             // Re-render to reflect changes
             this.renderTree();
 
+            this.updateToggleAllButton();
+
             if (saveBtn) {
                 saveBtn.textContent = '✓ Done!';
                 setTimeout(() => {
@@ -1089,8 +1140,10 @@ class SourceManager {
                 saveBtn.disabled = false;
             }
         } finally {
-            if (showAllBtn) showAllBtn.disabled = false;
-            if (hideAllBtn) hideAllBtn.disabled = false;
+            if (toggleAllBtn) {
+                toggleAllBtn.disabled = false;
+                this.updateToggleAllButton();
+            }
         }
     }
 

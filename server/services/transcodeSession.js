@@ -18,12 +18,13 @@ const fs = require('fs').promises;
 const crypto = require('crypto');
 const EventEmitter = require('events');
 const hwDetect = require('./hwDetect');
+const { getTranscodeCacheDir } = require('../paths');
 
 // Session storage
 const sessions = new Map();
 
 // Cache directory for transcoded segments
-const CACHE_DIR = path.join(process.cwd(), 'transcode-cache');
+const CACHE_DIR = getTranscodeCacheDir();
 
 // Session settings
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes idle timeout

@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>nodecast-tv | IPTV Player</title>
+  <title>CalibreViewer | IPTV Player</title>
   <meta name="description" content="Stream live TV, movies, and series with EPG support">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="stylesheet" href="css/main.css">
@@ -29,7 +29,7 @@
             <path
               d="M169.71,87.87c-4.77,0-9.1,1.88-12.31,4.92L35.3,22.3c.35-1.4.56-2.86.56-4.37C35.86,8.03,27.83,0,17.93,0S0,8.03,0,17.93c0,8.44,5.84,15.5,13.69,17.4v140c-7.71,2.01-13.41,8.99-13.41,17.33,0,9.9,8.03,17.93,17.93,17.93s17.93-8.03,17.93-17.93c0-1.56-.22-3.07-.6-4.51l121.21-69.98c3.26,3.42,7.86,5.55,12.95,5.55,9.9,0,17.93-8.03,17.93-17.93s-8.03-17.93-17.93-17.93ZM152.78,99.92c-.14.41-.27.83-.38,1.25h-51.47l-44.18-24.72L30.4,30.8c.33-.32.64-.65.94-.99l121.45,70.12ZM22.17,175.2V35.33c.23-.05.45-.11.67-.17l26.35,45.65-.34,50.04-25.74,44.59c-.31-.09-.63-.17-.95-.24ZM31.52,180.69c-.27-.3-.55-.6-.84-.89l25.48-44.13,44.64-25.78h51.47c.07.32.15.63.24.94L31.52,180.69Z" />
           </svg></span>
-        <span class="brand-text">nodecast-tv</span>
+        <span class="brand-text">CalibreViewer</span>
         <span id="version-badge" class="version-badge"></span>
       </div>
       <button class="mobile-menu-toggle" id="mobile-menu-toggle" aria-label="Toggle menu">
@@ -450,12 +450,59 @@
                     d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
                 </svg> button next to EPG sources for manual refresh</p>
             </div>
+
+            <div class="source-section" id="desktop-update-section">
+              <h3>Desktop Updates (GitHub)</h3>
+              <div class="setting-item">
+                <div class="setting-info" style="flex: 1;">
+                  <span class="setting-label">Repository</span>
+                  <span class="setting-hint">Checks GitHub releases/tags for updates.</span>
+                </div>
+                <input type="text" id="update-repo" class="search-input" style="width: 320px;" readonly>
+              </div>
+              <div class="setting-item">
+                <div class="setting-info" style="flex: 1;">
+                  <span class="setting-label">Fallback Local Folder</span>
+                  <span class="setting-hint">Optional backup check against local installers (for example: CalibreViewer Setup 3.0.1.exe).</span>
+                </div>
+                <input type="text" id="update-folder-path" class="search-input" style="width: 320px;" readonly>
+              </div>
+              <div class="setting-item" style="gap: var(--space-sm);">
+                <button class="btn btn-sm btn-secondary" id="select-update-folder">Select Folder</button>
+                <button class="btn btn-sm btn-primary" id="check-local-update">Check for Updates</button>
+              </div>
+              <p id="local-update-status" class="hint">Local update checker is ready.</p>
+            </div>
           </div>
 
           <!-- Player Tab -->
           <div id="tab-player" class="tab-content">
             <div class="settings-section">
+              <h3>Interface Mode</h3>
+              <div class="setting-item">
+                <div class="setting-info" style="flex: 1;">
+                  <span class="setting-label">Layout Profile</span>
+                  <span class="setting-hint">Desktop keeps the current dense layout. TV mode increases size and spacing for easier couch use.</span>
+                </div>
+                <select id="setting-interface-mode" class="source-select" style="width: auto; min-width: 220px;">
+                  <option value="desktop">Desktop Mode</option>
+                  <option value="tv">TV Mode</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="settings-section">
               <h3>Keyboard Controls</h3>
+              <div class="setting-item">
+                <label class="setting-toggle">
+                  <input type="checkbox" id="setting-keyboard-only-mode">
+                  <span class="toggle-slider"></span>
+                </label>
+                <div class="setting-info">
+                  <span class="setting-label">Keyboard-only Navigation Mode</span>
+                  <span class="setting-hint">When enabled: arrows move focus, Tab jumps sections, Enter selects, Backspace goes back/exits stream, Escape opens Settings.</span>
+                </div>
+              </div>
               <div class="setting-item">
                 <label class="setting-toggle">
                   <input type="checkbox" id="setting-arrow-keys" checked>
@@ -522,6 +569,16 @@
                 <div class="shortcut"><kbd>M</kbd> Mute/Unmute</div>
                 <div class="shortcut"><kbd>I</kbd> Toggle info overlay</div>
                 <div class="shortcut"><kbd>PgUp</kbd> / <kbd>PgDn</kbd> Channel up/down</div>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <h3>Theme Colors</h3>
+              <p class="hint" style="margin-bottom: var(--space-sm);">Use the color wheels to customize the app palette. Changes are applied live and saved automatically.</p>
+              <div id="theme-color-grid" class="theme-color-grid"></div>
+              <div class="setting-item" style="margin-top: var(--space-md);">
+                <button class="btn btn-sm btn-secondary" id="theme-reset-btn">Reset Theme to Defaults</button>
+                <span id="theme-status" class="hint" style="margin-left: var(--space-sm);"></span>
               </div>
             </div>
           </div>
@@ -746,8 +803,7 @@
                   <button type="button" class="search-clear" title="Clear search">&times;</button>
                 </div>
                 <div class="content-actions">
-                  <button class="btn btn-sm btn-secondary" id="content-show-all">Show All</button>
-                  <button class="btn btn-sm btn-secondary" id="content-hide-all">Hide All</button>
+                  <button class="btn btn-sm btn-secondary" id="content-toggle-all">Check All</button>
                   <button class="btn btn-sm btn-primary" id="content-save"><svg xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24" fill="currentColor" class="icon">
                       <path
@@ -1016,6 +1072,11 @@
       </div>
 
     </main>
+  </div>
+
+  <div id="global-activity-indicator" class="global-activity-indicator" aria-live="polite" aria-hidden="true">
+    <div class="global-activity-spinner" aria-hidden="true"></div>
+    <span class="global-activity-text">Working...</span>
   </div>
 
   <!-- Modal Template -->

@@ -5,9 +5,10 @@
 
 const fs = require('fs');
 const path = require('path');
+const { getCacheDir } = require('../paths');
 
 // Cache directory
-const cacheDir = path.join(__dirname, '..', '..', 'data', 'cache');
+const cacheDir = getCacheDir();
 
 // Ensure cache directories exist
 function ensureCacheDir(type, sourceId) {

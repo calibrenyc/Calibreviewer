@@ -43,6 +43,8 @@ class VideoPlayer {
      */
     getDefaultSettings() {
         return {
+            uiMode: 'desktop',
+            keyboardOnlyMode: false,
             arrowKeysChangeChannel: true,
             overlayDuration: 5,
             defaultVolume: 80,
