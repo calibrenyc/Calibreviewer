@@ -254,6 +254,129 @@
             color: var(--color-error);
             border-color: var(--color-error);
         }
+
+        .btn-back {
+            margin-top: var(--space-sm);
+            background: transparent;
+            border: 1px solid var(--color-border);
+            color: var(--color-text-secondary);
+        }
+
+        .btn-back:hover {
+            color: var(--color-text-primary);
+            border-color: var(--color-accent);
+            background: var(--color-bg-tertiary);
+        }
+
+        .profile-picker {
+            margin-top: var(--space-lg);
+        }
+
+        .profile-picker.hidden {
+            display: none;
+        }
+
+        .profile-picker-title {
+            margin: 0 0 var(--space-md);
+            color: var(--color-text-secondary);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .profile-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--space-md);
+        }
+
+        .profile-card {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 120px;
+            padding: 14px 10px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-border);
+            background: var(--color-bg-tertiary);
+            color: var(--color-text-primary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .profile-card:hover {
+            border-color: var(--color-accent);
+            background: var(--color-bg-hover);
+            transform: translateY(-1px);
+        }
+
+        .profile-avatar {
+            width: 52px;
+            height: 52px;
+            border-radius: 14px;
+            border: 1px solid var(--color-border-light);
+            background: linear-gradient(145deg, var(--color-accent), #4b4fd6);
+            color: #fff;
+            font-size: 20px;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            text-transform: uppercase;
+        }
+
+        .profile-name {
+            font-size: 14px;
+            font-weight: 600;
+            text-align: center;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .profile-meta {
+            font-size: 11px;
+            color: var(--color-text-muted);
+            text-align: center;
+        }
+
+        .profile-card-add .profile-avatar {
+            background: transparent;
+            color: var(--color-accent);
+            border-style: dashed;
+            font-size: 28px;
+            font-weight: 500;
+        }
+
+        .profile-remove {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 1px solid var(--color-border);
+            background: var(--color-bg-secondary);
+            color: var(--color-text-muted);
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .profile-remove:hover {
+            color: var(--color-error);
+            border-color: var(--color-error);
+        }
+
+        @media (max-width: 480px) {
+            .profile-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 
@@ -298,6 +421,8 @@
                 <button type="submit" class="btn-login" id="submit-btn">Sign In</button>
             </form>
 
+            <button type="button" class="btn-login btn-back hidden" id="back-to-profiles">Back to Profiles</button>
+
             <div class="sso-divider" style="text-align: center; margin: 20px 0; position: relative;">
                 <span
                     style="background: var(--color-bg-secondary); padding: 0 10px; color: var(--color-text-secondary); font-size: 14px; position: relative; z-index: 1;">OR</span>
@@ -316,9 +441,9 @@
                 Sign in with SSO
             </button>
 
-            <div id="saved-logins" class="saved-logins hidden">
-                <h3>Saved Logins</h3>
-                <div id="saved-login-list" class="saved-login-list"></div>
+            <div id="profile-picker" class="profile-picker hidden">
+                <h3 class="profile-picker-title">Who is watching?</h3>
+                <div id="profile-grid" class="profile-grid"></div>
             </div>
 
             <style>
@@ -334,6 +459,7 @@
 
     <script>
         const SAVED_LOGINS_KEY = 'savedLogins';
+        const KNOWN_USERS_KEY = 'knownLoginUsers';
         const REMEMBER_ME_KEY = 'rememberLoginEnabled';
         const LAST_LOGIN_USER_KEY = 'lastLoginUser';
         const MAX_SAVED_LOGINS = 6;
@@ -357,6 +483,52 @@
             }
         }
 
+        function getKnownUsers() {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(KNOWN_USERS_KEY) || '[]');
+                if (!Array.isArray(parsed)) return [];
+
+                const normalized = parsed
+                    .filter(item => item && item.username)
+                    .map(item => ({
+                        username: String(item.username).trim(),
+                        lastUsedAt: item.lastUsedAt || null
+                    }))
+                    .filter(item => !!item.username);
+
+                // Seed from legacy single-value storage so existing users immediately see a clickable profile.
+                const lastUser = (localStorage.getItem(LAST_LOGIN_USER_KEY) || '').trim();
+                if (lastUser && !normalized.some(item => item.username === lastUser)) {
+                    normalized.unshift({ username: lastUser, lastUsedAt: null });
+                }
+
+                return normalized.slice(0, MAX_SAVED_LOGINS);
+            } catch {
+                return [];
+            }
+        }
+
+        function setKnownUsers(entries) {
+            localStorage.setItem(KNOWN_USERS_KEY, JSON.stringify(entries.slice(0, MAX_SAVED_LOGINS)));
+        }
+
+        function upsertKnownUser(username) {
+            const cleaned = String(username || '').trim();
+            if (!cleaned) return;
+
+            const now = new Date().toISOString();
+            const existing = getKnownUsers().filter(entry => entry.username !== cleaned);
+            existing.unshift({ username: cleaned, lastUsedAt: now });
+            setKnownUsers(existing);
+        }
+
+        function removeKnownUser(username) {
+            const cleaned = String(username || '').trim();
+            if (!cleaned) return;
+            const next = getKnownUsers().filter(entry => entry.username !== cleaned);
+            setKnownUsers(next);
+        }
+
         function setSavedLogins(entries) {
             localStorage.setItem(SAVED_LOGINS_KEY, JSON.stringify(entries.slice(0, MAX_SAVED_LOGINS)));
         }
@@ -371,12 +543,109 @@
         function removeSavedLogin(username) {
             const next = getSavedLogins().filter(entry => entry.username !== username);
             setSavedLogins(next);
+            removeKnownUser(username);
             renderSavedLogins();
         }
 
         function clearSavedLogins() {
             setSavedLogins([]);
-            renderSavedLogins();
+            renderProfilePicker();
+        }
+
+        function selectKnownUser(entry) {
+            const usernameInput = document.getElementById('username');
+            const passwordInput = document.getElementById('password');
+            if (!usernameInput || !passwordInput) return;
+
+            usernameInput.value = entry.username;
+            localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+            upsertKnownUser(entry.username);
+            showCredentialForm({ showBackToProfiles: true });
+            passwordInput.focus();
+        }
+
+        function getProfileEntries() {
+            const entries = getSavedLogins();
+            const knownUsers = getKnownUsers();
+
+            const merged = new Map();
+            knownUsers.forEach(user => {
+                merged.set(user.username, {
+                    username: user.username,
+                    lastUsedAt: user.lastUsedAt,
+                    token: null
+                });
+            });
+
+            entries.forEach(saved => {
+                const existing = merged.get(saved.username) || { username: saved.username };
+                merged.set(saved.username, {
+                    ...existing,
+                    token: saved.token,
+                    lastUsedAt: saved.lastUsedAt || existing.lastUsedAt || null
+                });
+            });
+
+            return Array.from(merged.values())
+                .sort((a, b) => {
+                    const aTime = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+                    const bTime = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+                    return bTime - aTime;
+                })
+                .slice(0, MAX_SAVED_LOGINS);
+        }
+
+        function hasProfilesForPicker() {
+            return getProfileEntries().length > 0;
+        }
+
+        function showCredentialForm(options = {}) {
+            const { showBackToProfiles = false } = options;
+            const loginForm = document.getElementById('login-form');
+            const ssoDivider = document.querySelector('.sso-divider');
+            const ssoButton = document.getElementById('btn-sso-login');
+            const profilePicker = document.getElementById('profile-picker');
+            const backBtn = document.getElementById('back-to-profiles');
+
+            if (loginForm) loginForm.style.display = '';
+            if (profilePicker) profilePicker.classList.add('hidden');
+
+            if (!isSetupMode) {
+                if (ssoDivider) ssoDivider.style.display = '';
+                if (ssoButton) ssoButton.style.display = '';
+            }
+
+            if (backBtn) {
+                const shouldShowBack = showBackToProfiles && !isSetupMode && hasProfilesForPicker();
+                backBtn.classList.toggle('hidden', !shouldShowBack);
+            }
+
+            if (!isSetupMode) {
+                const subtitle = document.getElementById('login-subtitle');
+                if (subtitle) subtitle.textContent = 'Sign in to continue';
+            }
+        }
+
+        function showProfilePicker() {
+            const loginForm = document.getElementById('login-form');
+            const ssoDivider = document.querySelector('.sso-divider');
+            const ssoButton = document.getElementById('btn-sso-login');
+            const profilePicker = document.getElementById('profile-picker');
+            const backBtn = document.getElementById('back-to-profiles');
+            const subtitle = document.getElementById('login-subtitle');
+
+            if (isSetupMode || !profilePicker || !hasProfilesForPicker()) {
+                showCredentialForm({ showBackToProfiles: false });
+                return;
+            }
+
+            if (loginForm) loginForm.style.display = 'none';
+            if (ssoDivider) ssoDivider.style.display = 'none';
+            if (ssoButton) ssoButton.style.display = 'none';
+            if (backBtn) backBtn.classList.add('hidden');
+
+            profilePicker.classList.remove('hidden');
+            if (subtitle) subtitle.textContent = 'Choose your profile';
         }
 
         async function validateToken(token) {
@@ -402,14 +671,19 @@
                 await validateToken(entry.token);
                 localStorage.setItem('authToken', entry.token);
                 localStorage.setItem(LAST_LOGIN_USER_KEY, entry.username);
+                upsertKnownUser(entry.username);
                 if (getRememberMeEnabled()) {
                     upsertSavedLogin(entry.username, entry.token);
                 }
                 window.location.replace('/');
             } catch (err) {
-                removeSavedLogin(entry.username);
-                errorMessage.textContent = err.message;
+                // Keep the user in the picker, but remove stale token shortcut.
+                const next = getSavedLogins().filter(saved => saved.username !== entry.username);
+                setSavedLogins(next);
+                selectKnownUser(entry);
+                errorMessage.textContent = `${err.message} Password required for ${entry.username}.`;
                 errorMessage.classList.add('show');
+                renderProfilePicker();
             }
         }
 
@@ -420,53 +694,95 @@
             return `Last used ${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         }
 
-        function renderSavedLogins() {
-            const container = document.getElementById('saved-logins');
-            const list = document.getElementById('saved-login-list');
-            if (!container || !list) return;
+        function renderProfilePicker() {
+            const picker = document.getElementById('profile-picker');
+            const grid = document.getElementById('profile-grid');
+            if (!picker || !grid) return;
 
-            const entries = getSavedLogins();
+            const entries = getProfileEntries();
+            grid.innerHTML = '';
+
             if (!entries.length || isSetupMode) {
-                container.classList.add('hidden');
-                list.innerHTML = '';
+                picker.classList.add('hidden');
+                showCredentialForm({ showBackToProfiles: false });
                 return;
             }
 
-            container.classList.remove('hidden');
-            list.innerHTML = '';
-
             entries.forEach((entry) => {
-                const row = document.createElement('div');
-                row.className = 'saved-login-row';
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.className = 'profile-card';
+                card.title = `Use ${entry.username}`;
 
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'saved-login-btn';
-                btn.title = `Sign in as ${entry.username}`;
+                const avatar = document.createElement('span');
+                avatar.className = 'profile-avatar';
+                avatar.textContent = entry.username.charAt(0) || 'U';
 
-                const user = document.createElement('div');
-                user.className = 'saved-login-user';
-                user.textContent = entry.username;
+                const name = document.createElement('span');
+                name.className = 'profile-name';
+                name.textContent = entry.username;
 
-                const meta = document.createElement('div');
-                meta.className = 'saved-login-meta';
-                meta.textContent = formatLastUsed(entry.lastUsedAt);
-
-                btn.appendChild(user);
-                btn.appendChild(meta);
-                btn.addEventListener('click', () => quickLogin(entry));
+                const meta = document.createElement('span');
+                meta.className = 'profile-meta';
+                meta.textContent = entry.token ? 'Quick sign-in' : 'Enter password';
 
                 const removeBtn = document.createElement('button');
                 removeBtn.type = 'button';
-                removeBtn.className = 'saved-login-remove';
+                removeBtn.className = 'profile-remove';
                 removeBtn.title = `Remove ${entry.username}`;
-                removeBtn.textContent = 'Remove';
-                removeBtn.addEventListener('click', () => removeSavedLogin(entry.username));
+                removeBtn.textContent = 'x';
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    removeSavedLogin(entry.username);
+                });
 
-                row.appendChild(btn);
-                row.appendChild(removeBtn);
-                list.appendChild(row);
+                card.appendChild(avatar);
+                card.appendChild(name);
+                card.appendChild(meta);
+                card.appendChild(removeBtn);
+                card.addEventListener('click', () => {
+                    if (entry.token) {
+                        quickLogin(entry);
+                    } else {
+                        selectKnownUser(entry);
+                    }
+                });
+
+                grid.appendChild(card);
             });
+
+            const addCard = document.createElement('button');
+            addCard.type = 'button';
+            addCard.className = 'profile-card profile-card-add';
+            addCard.title = 'Add new user';
+
+            const addAvatar = document.createElement('span');
+            addAvatar.className = 'profile-avatar';
+            addAvatar.textContent = '+';
+
+            const addName = document.createElement('span');
+            addName.className = 'profile-name';
+            addName.textContent = 'Add New User';
+
+            const addMeta = document.createElement('span');
+            addMeta.className = 'profile-meta';
+            addMeta.textContent = 'Use another account';
+
+            addCard.appendChild(addAvatar);
+            addCard.appendChild(addName);
+            addCard.appendChild(addMeta);
+
+            addCard.addEventListener('click', () => {
+                const usernameInput = document.getElementById('username');
+                const passwordInput = document.getElementById('password');
+                if (usernameInput) usernameInput.value = '';
+                if (passwordInput) passwordInput.value = '';
+                showCredentialForm({ showBackToProfiles: true });
+                usernameInput?.focus();
+            });
+
+            grid.appendChild(addCard);
+            showProfilePicker();
         }
 
         function hydrateRememberedState() {
@@ -481,6 +797,10 @@
                 usernameInput.value = lastUser;
             }
 
+            if (lastUser) {
+                upsertKnownUser(lastUser);
+            }
+
             rememberCheckbox.addEventListener('change', () => {
                 const enabled = rememberCheckbox.checked;
                 setRememberMeEnabled(enabled);
@@ -488,6 +808,14 @@
                     clearSavedLogins();
                 }
             });
+
+            const backToProfilesBtn = document.getElementById('back-to-profiles');
+            if (backToProfilesBtn) {
+                backToProfilesBtn.addEventListener('click', () => {
+                    renderProfilePicker();
+                    showProfilePicker();
+                });
+            }
         }
 
         // Start SSO Login
@@ -525,10 +853,10 @@
                     document.getElementById('btn-sso-login').style.display = 'none';
                 }
 
-                renderSavedLogins();
+                renderProfilePicker();
             } catch (err) {
                 console.error('Error checking setup status:', err);
-                renderSavedLogins();
+                renderProfilePicker();
             }
         }
 
@@ -569,6 +897,7 @@
                 // Store token
                 localStorage.setItem('authToken', data.token);
                 localStorage.setItem(LAST_LOGIN_USER_KEY, username);
+                upsertKnownUser(username);
                 setRememberMeEnabled(rememberMe);
 
                 if (rememberMe) {

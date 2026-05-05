@@ -93,9 +93,47 @@ function saveLocalUpdateFolder(folderPath) {
     writeUpdateConfig({ folderPath });
 }
 
+function normalizeGithubRepoInput(value) {
+    if (typeof value !== 'string') return '';
+
+    let raw = value.trim();
+    if (!raw) return '';
+
+    // Accept full URLs like https://github.com/owner/repo(.git)
+    if (/^https?:\/\//i.test(raw)) {
+        try {
+            const parsed = new URL(raw);
+            if (/github\.com$/i.test(parsed.hostname)) {
+                raw = parsed.pathname;
+            }
+        } catch {
+            return '';
+        }
+    }
+
+    raw = raw
+        .replace(/^github\.com\//i, '')
+        .replace(/^\/+/, '')
+        .replace(/\/+$/, '')
+        .replace(/\.git$/i, '');
+
+    const parts = raw.split('/').filter(Boolean);
+    if (parts.length < 2) return '';
+
+    const owner = parts[0];
+    const repo = parts[1];
+    const normalized = `${owner}/${repo}`;
+
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+        return '';
+    }
+
+    return normalized;
+}
+
 function getGithubRepo() {
     const config = readUpdateConfig();
-    const configuredRepo = typeof config.githubRepo === 'string' ? config.githubRepo.trim() : '';
+    const configuredRepo = normalizeGithubRepoInput(config.githubRepo || '');
     return configuredRepo || DEFAULT_GITHUB_REPO;
 }
 
@@ -221,12 +259,12 @@ function registerDesktopIpc() {
     });
 
     ipcMain.handle('desktop:set-update-repo', async (_event, repo) => {
-        const normalized = typeof repo === 'string' ? repo.trim() : '';
-        if (!normalized || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+        const normalized = normalizeGithubRepoInput(repo);
+        if (!normalized) {
             return {
                 ok: false,
                 repo: getGithubRepo(),
-                message: 'Invalid repository format. Use owner/repo.'
+                message: 'Invalid repository format. Use owner/repo or a GitHub URL.'
             };
         }
 
@@ -317,12 +355,16 @@ function registerDesktopIpc() {
                     : `You are up to date (v${currentVersion}). Latest on GitHub is v${remote.latestVersion}.`
             };
         } catch (error) {
+            const statusMessage = String(error?.message || 'Unknown error').includes('(404)')
+                ? 'Repository not found or private. Verify the update repository setting.'
+                : (error?.message || 'Unknown error');
+
             return {
                 repo,
                 currentVersion,
                 updateAvailable: false,
                 error: true,
-                message: `Failed to check GitHub updates: ${error?.message || 'Unknown error'}`
+                message: `Failed to check GitHub updates: ${statusMessage}`
             };
         }
     });

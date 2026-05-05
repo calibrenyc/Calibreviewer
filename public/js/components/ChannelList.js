@@ -508,14 +508,17 @@ class ChannelList {
                data-stream-id="${channel.streamId || ''}"
                data-url="${channel.url || ''}"
                data-render-id="${renderId}"
-               data-render-group="${renderGroup}">
+                             data-render-group="${renderGroup}"
+                             tabindex="0"
+                             role="button"
+                             aria-label="Play channel ${this.escapeHtml(channel.name)}">
             <img class="channel-logo" src="${this.getProxiedImageUrl(channel.tvgLogo)}" 
                  alt="" onerror="this.onerror=null;this.src='/img/placeholder.png'">
             <div class="channel-info">
               <div class="channel-name">${this.escapeHtml(channel.name)}</div>
               <div class="channel-program">${this.escapeHtml(this.getProgramInfo(channel) || '')}</div>
             </div>
-            <button class="favorite-btn ${isFavorite ? 'active' : ''}" title="${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}">
+                        <button type="button" class="favorite-btn ${isFavorite ? 'active' : ''}" title="${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}" aria-label="${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}">
               ${isFavorite ? Icons.favorite : Icons.favoriteOutline}
             </button>
           </div>
@@ -566,20 +569,68 @@ class ChannelList {
         }
 
         groupEl.querySelectorAll('.channel-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                if (e.target.closest('.favorite-btn')) return;
-                this.selectChannel(item.dataset);
-            });
-            item.addEventListener('contextmenu', (e) => this.showContextMenu(e, 'channel', item.dataset));
-
-            const favBtn = item.querySelector('.favorite-btn');
-            if (favBtn) {
-                favBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.toggleFavorite(parseInt(item.dataset.sourceId), item.dataset.channelId);
-                });
-            }
+            this.bindChannelItemInteractions(item);
         });
+    }
+
+    bindChannelItemInteractions(item) {
+        item.addEventListener('click', (e) => {
+            if (e.target.closest('.favorite-btn')) return;
+            this.selectChannel(item.dataset);
+        });
+
+        item.addEventListener('keydown', (e) => {
+            this.handleChannelItemKeydown(e, item);
+        });
+
+        item.addEventListener('contextmenu', (e) => this.showContextMenu(e, 'channel', item.dataset));
+
+        const favBtn = item.querySelector('.favorite-btn');
+        if (favBtn) {
+            favBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleFavorite(parseInt(item.dataset.sourceId), item.dataset.channelId);
+            });
+        }
+    }
+
+    handleChannelItemKeydown(e, item) {
+        const favBtn = item.querySelector('.favorite-btn');
+
+        switch (e.key) {
+            case 'Enter':
+            case ' ': {
+                e.preventDefault();
+                if (e.target.closest('.favorite-btn') && favBtn) {
+                    favBtn.click();
+                } else {
+                    this.selectChannel(item.dataset);
+                }
+                break;
+            }
+            case 'ArrowRight': {
+                if (e.target === item && favBtn) {
+                    e.preventDefault();
+                    favBtn.focus();
+                }
+                break;
+            }
+            case 'ArrowLeft': {
+                if (e.target.closest('.favorite-btn')) {
+                    e.preventDefault();
+                    item.focus();
+                }
+                break;
+            }
+            case 'f':
+            case 'F': {
+                e.preventDefault();
+                this.toggleFavorite(parseInt(item.dataset.sourceId), item.dataset.channelId);
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     /**
@@ -621,14 +672,17 @@ class ChannelList {
                data-stream-id="${channel.streamId || ''}"
                data-url="${channel.url || ''}"
                data-render-id="${renderId}"
-               data-render-group="${renderGroup}">
+                             data-render-group="${renderGroup}"
+                             tabindex="0"
+                             role="button"
+                             aria-label="Play channel ${this.escapeHtml(channel.name)}">
             <img class="channel-logo" src="${this.getProxiedImageUrl(channel.tvgLogo)}" 
                  alt="" onerror="this.onerror=null;this.src='/img/placeholder.png'">
             <div class="channel-info">
               <div class="channel-name">${this.escapeHtml(channel.name)}</div>
               <div class="channel-program">${this.escapeHtml(this.getProgramInfo(channel) || '')}</div>
             </div>
-            <button class="favorite-btn ${isFavorite ? 'active' : ''}" title="${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}">
+                        <button type="button" class="favorite-btn ${isFavorite ? 'active' : ''}" title="${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}" aria-label="${isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}">
               ${isFavorite ? Icons.favorite : Icons.favoriteOutline}
             </button>
           </div>
@@ -639,19 +693,7 @@ class ChannelList {
 
         // Attach listeners to the new channel items
         container.querySelectorAll('.channel-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                if (e.target.closest('.favorite-btn')) return;
-                this.selectChannel(item.dataset);
-            });
-            item.addEventListener('contextmenu', (e) => this.showContextMenu(e, 'channel', item.dataset));
-
-            const favBtn = item.querySelector('.favorite-btn');
-            if (favBtn) {
-                favBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.toggleFavorite(parseInt(item.dataset.sourceId), item.dataset.channelId);
-                });
-            }
+            this.bindChannelItemInteractions(item);
         });
     }
 
@@ -1038,6 +1080,9 @@ class ChannelList {
         div.dataset.sourceType = channel.sourceType;
         div.dataset.streamId = channel.streamId || '';
         div.dataset.url = channel.url || '';
+        div.setAttribute('tabindex', '0');
+        div.setAttribute('role', 'button');
+        div.setAttribute('aria-label', `Play channel ${channel.name}`);
 
         div.innerHTML = `
             <img class="channel-logo" src="${this.getProxiedImageUrl(channel.tvgLogo)}" 
@@ -1046,26 +1091,13 @@ class ChannelList {
               <div class="channel-name">${this.escapeHtml(channel.name)}</div>
               <div class="channel-program">${this.getProgramInfo(channel) || ''}</div>
             </div>
-            <button class="favorite-btn active" title="Remove from Favorites">
+            <button type="button" class="favorite-btn active" title="Remove from Favorites" aria-label="Remove from Favorites">
               ❤️
             </button>
         `;
 
         // Attach listeners
-        div.addEventListener('click', (e) => {
-            if (e.target.closest('.favorite-btn')) return;
-            // Pass the render ID from the dataset
-            this.selectChannel({ ...div.dataset, renderId: div.dataset.renderId });
-        });
-        div.addEventListener('contextmenu', (e) => this.showContextMenu(e, 'channel', div.dataset));
-
-        const favBtn = div.querySelector('.favorite-btn');
-        if (favBtn) {
-            favBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.toggleFavorite(parseInt(div.dataset.sourceId), div.dataset.channelId);
-            });
-        }
+        this.bindChannelItemInteractions(div);
 
         return div;
     }

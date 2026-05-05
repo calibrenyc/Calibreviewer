@@ -2997,6 +2997,17 @@ kbd {
   opacity: 1;
 }
 
+.channel-item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.channel-item:focus-within .favorite-btn,
+.channel-item .favorite-btn:focus-visible,
+.favorite-btn.keyboard-nav-focus {
+  opacity: 1 !important;
+}
+
 .favorite-btn:hover {
   transform: scale(1.1);
 }
