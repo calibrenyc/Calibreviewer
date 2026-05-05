@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="public/img/logo-banner.png" alt="CalibreViewer" height="60" />
+  
 </p>
 
 # What is CalibreViewer?
