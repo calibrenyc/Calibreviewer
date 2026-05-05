@@ -6,6 +6,7 @@
 class EpgGuide {
     constructor() {
         this.cacheKey = 'calibreviewer.epgCache';
+        this.cacheMaxAgeMs = 10 * 60 * 60 * 1000;
         this.container = document.getElementById('epg-grid');
         this.dateDisplay = document.getElementById('guide-date');
         this.prevBtn = document.getElementById('guide-prev');
@@ -50,6 +51,7 @@ class EpgGuide {
                 return false;
             }
 
+            this.cacheTimestamp = Number.isFinite(cached?.timestamp) ? cached.timestamp : null;
             this.channels = cached.channels;
             this.programmes = cached.programmes;
             this.channelMap = new Map();
@@ -68,14 +70,24 @@ class EpgGuide {
 
     persistEpgSnapshot() {
         try {
+            this.cacheTimestamp = Date.now();
             localStorage.setItem(this.cacheKey, JSON.stringify({
-                timestamp: Date.now(),
+                timestamp: this.cacheTimestamp,
                 channels: this.channels || [],
                 programmes: this.programmes || []
             }));
         } catch {
             // ignore local cache quota issues
         }
+    }
+
+    hasCachedData() {
+        return (this.channels?.length || 0) > 0 || (this.programmes?.length || 0) > 0;
+    }
+
+    isCacheStale() {
+        if (!this.cacheTimestamp) return true;
+        return (Date.now() - this.cacheTimestamp) > this.cacheMaxAgeMs;
     }
 
     /**
@@ -175,6 +187,10 @@ class EpgGuide {
         console.log('[EPG] Starting display refresh timer: every 5 minutes');
 
         this._backgroundRefreshTimer = setInterval(async () => {
+            if (!this.isCacheStale()) {
+                return;
+            }
+
             console.log('[EPG] Refreshing EPG display from cache');
             try {
                 await this.fetchEpgData(false, { background: true }); // Fetch cached data (no force refresh)
@@ -213,7 +229,16 @@ class EpgGuide {
      */
     async loadEpg(forceRefresh = false, options = {}) {
         try {
-            const shouldPreserveExisting = options?.preserveExisting && (this.channels.length > 0 || this.programmes.length > 0);
+            const shouldPreserveExisting = options?.preserveExisting && this.hasCachedData();
+            const shouldUseCacheOnly = !forceRefresh && this.hasCachedData() && !this.isCacheStale();
+
+            if (shouldUseCacheOnly) {
+                this.lastRefreshTime = this.cacheTimestamp ? new Date(this.cacheTimestamp) : new Date();
+                this.render();
+                this.startBackgroundRefresh();
+                return;
+            }
+
             if (!shouldPreserveExisting) {
                 this.container.innerHTML = '<div class="loading"></div>';
             }
@@ -250,7 +275,7 @@ class EpgGuide {
 
         // Build query params for server-side caching
         // Sync interval is controlled by server, we just hint at max cache age
-        const maxAge = 24; // hours - server controls actual refresh
+        const maxAge = 10; // hours - refresh cached data after 10 hours
         const queryParams = forceRefresh ? '?refresh=1' : `?maxAge=${maxAge}`;
 
         // Load EPG from ALL sources in parallel

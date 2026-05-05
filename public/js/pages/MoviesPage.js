@@ -6,6 +6,8 @@
 class MoviesPage {
     constructor(app) {
         this.app = app;
+        this.cacheKey = 'calibreviewer.moviesPageCache';
+        this.cacheMaxAgeMs = 10 * 60 * 60 * 1000;
         this.container = document.getElementById('movies-grid');
         this.sourceSelect = document.getElementById('movies-source-select');
         this.categorySelect = document.getElementById('movies-category-select');
@@ -21,19 +23,100 @@ class MoviesPage {
         this.observer = null;
         this.favoriteIds = new Set(); // Track favorite movie IDs
         this.showFavoritesOnly = false;
+        this.hiddenCategoryIds = new Set();
+        this.cacheTimestamp = null;
 
+        this.restorePersistedState();
         this.init();
+    }
+
+    restorePersistedState() {
+        try {
+            const raw = localStorage.getItem(this.cacheKey);
+            if (!raw) return false;
+
+            const cached = JSON.parse(raw);
+            if (!Array.isArray(cached?.movies) || !Array.isArray(cached?.sources) || !Array.isArray(cached?.categories)) {
+                return false;
+            }
+
+            this.cacheTimestamp = Number.isFinite(cached?.timestamp) ? cached.timestamp : null;
+            this.movies = cached.movies;
+            this.sources = cached.sources;
+            this.categories = cached.categories;
+            this.hiddenCategoryIds = new Set(Array.isArray(cached.hiddenCategoryIds) ? cached.hiddenCategoryIds : []);
+            this.showFavoritesOnly = cached.showFavoritesOnly === true;
+            this.cachedSourceValue = typeof cached.selectedSource === 'string' ? cached.selectedSource : '';
+            this.cachedCategoryValue = typeof cached.selectedCategory === 'string' ? cached.selectedCategory : '';
+            return this.movies.length > 0 || this.categories.length > 0 || this.sources.length > 0;
+        } catch {
+            return false;
+        }
+    }
+
+    persistState() {
+        try {
+            this.cacheTimestamp = Date.now();
+            localStorage.setItem(this.cacheKey, JSON.stringify({
+                timestamp: this.cacheTimestamp,
+                sources: this.sources || [],
+                categories: this.categories || [],
+                movies: this.movies || [],
+                hiddenCategoryIds: [...this.hiddenCategoryIds],
+                selectedSource: this.sourceSelect?.value || '',
+                selectedCategory: this.categorySelect?.value || '',
+                showFavoritesOnly: this.showFavoritesOnly === true
+            }));
+        } catch {
+            // ignore local cache quota issues
+        }
+    }
+
+    isCacheStale() {
+        if (!this.cacheTimestamp) return true;
+        return (Date.now() - this.cacheTimestamp) > this.cacheMaxAgeMs;
+    }
+
+    populateSourceOptions() {
+        this.sourceSelect.innerHTML = '<option value="">All Sources</option>';
+        this.sources.forEach(s => {
+            const option = document.createElement('option');
+            option.value = s.id;
+            option.textContent = s.name;
+            this.sourceSelect.appendChild(option);
+        });
+
+        if (this.cachedSourceValue && this.sourceSelect.querySelector(`option[value="${this.cachedSourceValue}"]`)) {
+            this.sourceSelect.value = this.cachedSourceValue;
+        }
+    }
+
+    populateCategoryOptions() {
+        this.categorySelect.innerHTML = '<option value="">All Categories</option>';
+        this.categories.forEach(c => {
+            const option = document.createElement('option');
+            option.value = `${c.sourceId}:${c.category_id}`;
+            option.textContent = c.category_name;
+            this.categorySelect.appendChild(option);
+        });
+
+        if (this.cachedCategoryValue && this.categorySelect.querySelector(`option[value="${this.cachedCategoryValue}"]`)) {
+            this.categorySelect.value = this.cachedCategoryValue;
+        }
     }
 
     init() {
         // Source change handler
         this.sourceSelect?.addEventListener('change', async () => {
+            this.cachedSourceValue = this.sourceSelect.value;
+            this.cachedCategoryValue = '';
             await this.loadCategories();
             await this.loadMovies();
         });
 
         // Category change handler
         this.categorySelect?.addEventListener('change', () => {
+            this.cachedCategoryValue = this.categorySelect.value;
             this.loadMovies();
         });
 
@@ -56,11 +139,42 @@ class MoviesPage {
         favBtn?.addEventListener('click', () => {
             this.showFavoritesOnly = !this.showFavoritesOnly;
             favBtn.classList.toggle('active', this.showFavoritesOnly);
+            this.persistState();
             this.filterAndRender();
         });
+
+        if (this.sources.length > 0) {
+            this.populateSourceOptions();
+        }
+        if (this.categories.length > 0) {
+            this.populateCategoryOptions();
+        }
+        if (favBtn) {
+            favBtn.classList.toggle('active', this.showFavoritesOnly);
+        }
     }
 
     async show() {
+        const hasCachedCatalog = this.sources.length > 0 || this.categories.length > 0 || this.movies.length > 0;
+        if (hasCachedCatalog) {
+            this.populateSourceOptions();
+            this.populateCategoryOptions();
+            await this.loadFavorites({ background: true });
+            if (this.movies.length > 0) {
+                this.filterAndRender();
+            }
+            if (this.isCacheStale()) {
+                (async () => {
+                    await this.loadSources({ background: true });
+                    await this.loadCategories({ background: true });
+                    await this.loadMovies({ background: true, preserveExisting: true });
+                })().catch(err => {
+                    console.warn('[Movies] Background refresh failed:', err?.message || err);
+                });
+            }
+            return;
+        }
+
         // Load sources if not loaded
         if (this.sources.length === 0) {
             await this.loadSources();
@@ -80,9 +194,9 @@ class MoviesPage {
         // Page is hidden
     }
 
-    async loadFavorites() {
+    async loadFavorites(requestOptions = {}) {
         try {
-            const favs = await API.favorites.getAll(null, 'movie');
+            const favs = await API.favorites.getAll(null, 'movie', requestOptions);
             this.favoriteIds = new Set(favs.map(f => `${f.source_id}:${f.item_id}`));
         } catch (err) {
             console.error('Error loading favorites:', err);
@@ -90,24 +204,18 @@ class MoviesPage {
     }
 
 
-    async loadSources() {
+    async loadSources(requestOptions = {}) {
         try {
-            const allSources = await API.sources.getAll();
+            const allSources = await API.sources.getAll(requestOptions);
             this.sources = allSources.filter(s => s.type === 'xtream' && s.enabled);
-
-            this.sourceSelect.innerHTML = '<option value="">All Sources</option>';
-            this.sources.forEach(s => {
-                const option = document.createElement('option');
-                option.value = s.id;
-                option.textContent = s.name;
-                this.sourceSelect.appendChild(option);
-            });
+            this.populateSourceOptions();
+            this.persistState();
         } catch (err) {
             console.error('Error loading sources:', err);
         }
     }
 
-    async loadCategories() {
+    async loadCategories(requestOptions = {}) {
         try {
             this.categories = [];
             this.hiddenCategoryIds = new Set(); // Track hidden categories
@@ -121,7 +229,7 @@ class MoviesPage {
             // Fetch hidden items for each source
             for (const source of sourcesToLoad) {
                 try {
-                    const hiddenItems = await API.channels.getHidden(source.id);
+                    const hiddenItems = await API.channels.getHidden(source.id, requestOptions);
                     hiddenItems.forEach(h => {
                         if (h.item_type === 'vod_category') {
                             this.hiddenCategoryIds.add(`${source.id}:${h.item_id}`);
@@ -134,7 +242,7 @@ class MoviesPage {
 
             for (const source of sourcesToLoad) {
                 try {
-                    const cats = await API.proxy.xtream.vodCategories(source.id);
+                    const cats = await API.proxy.xtream.vodCategories(source.id, requestOptions);
                     if (cats && Array.isArray(cats)) {
                         cats.forEach(c => {
                             // Skip hidden categories
@@ -148,21 +256,18 @@ class MoviesPage {
                 }
             }
 
-            // Populate dropdown
-            this.categories.forEach(c => {
-                const option = document.createElement('option');
-                option.value = `${c.sourceId}:${c.category_id}`;
-                option.textContent = c.category_name;
-                this.categorySelect.appendChild(option);
-            });
+            this.populateCategoryOptions();
+            this.persistState();
         } catch (err) {
             console.error('Error loading categories:', err);
         }
     }
 
-    async loadMovies() {
+    async loadMovies(options = {}) {
         this.isLoading = true;
-        this.container.innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
+        if (!options.preserveExisting) {
+            this.container.innerHTML = '<div class="loading"><div class="loading-spinner"></div></div>';
+        }
 
         try {
             this.movies = [];
@@ -187,7 +292,7 @@ class MoviesPage {
                         }
                     }
 
-                    const movies = await API.proxy.xtream.vodStreams(source.id, catId);
+                    const movies = await API.proxy.xtream.vodStreams(source.id, catId, options);
                     console.log(`[Movies] Source ${source.id}, Category ${catId || 'ALL'}: Got ${movies?.length || 0} movies`);
                     if (movies && Array.isArray(movies)) {
                         movies.forEach(m => {
@@ -208,6 +313,7 @@ class MoviesPage {
             }
 
             console.log(`[Movies] Total loaded: ${this.movies.length} movies`);
+            this.persistState();
             this.filterAndRender();
         } catch (err) {
             console.error('Error loading movies:', err);

@@ -129,29 +129,37 @@ const API = {
             },
             vodCategories: (sourceId, options = {}) => {
                 const params = options.includeHidden ? '?includeHidden=true' : '';
-                return API.request('GET', `/proxy/xtream/${sourceId}/vod_categories${params}`);
+                return API.request('GET', `/proxy/xtream/${sourceId}/vod_categories${params}`, null, {
+                    background: !!options.background
+                });
             },
             vodStreams: (sourceId, categoryId = null, options = {}) => {
                 const params = [];
                 if (categoryId) params.push(`category_id=${categoryId}`);
                 if (options.includeHidden) params.push('includeHidden=true');
                 const query = params.length ? `?${params.join('&')}` : '';
-                return API.request('GET', `/proxy/xtream/${sourceId}/vod_streams${query}`);
+                return API.request('GET', `/proxy/xtream/${sourceId}/vod_streams${query}`, null, {
+                    background: !!options.background
+                });
             },
             seriesCategories: (sourceId, options = {}) => {
                 const params = options.includeHidden ? '?includeHidden=true' : '';
-                return API.request('GET', `/proxy/xtream/${sourceId}/series_categories${params}`);
+                return API.request('GET', `/proxy/xtream/${sourceId}/series_categories${params}`, null, {
+                    background: !!options.background
+                });
             },
             series: (sourceId, categoryId = null, options = {}) => {
                 const params = [];
                 if (categoryId) params.push(`category_id=${categoryId}`);
                 if (options.includeHidden) params.push('includeHidden=true');
                 const query = params.length ? `?${params.join('&')}` : '';
-                return API.request('GET', `/proxy/xtream/${sourceId}/series${query}`);
+                return API.request('GET', `/proxy/xtream/${sourceId}/series${query}`, null, {
+                    background: !!options.background
+                });
             },
             seriesInfo: (sourceId, seriesId) =>
                 API.request('GET', `/proxy/xtream/${sourceId}/series_info?series_id=${seriesId}`),
-            shortEpg: (sourceId, streamId) => API.request('GET', `/proxy/xtream/${sourceId}/short_epg?stream_id=${streamId}`),
+            shortEpg: (sourceId, streamId, requestOptions = {}) => API.request('GET', `/proxy/xtream/${sourceId}/short_epg?stream_id=${streamId}`, null, requestOptions),
             getStreamUrl: (sourceId, streamId, type = 'live', container = 'm3u8') =>
                 API.request('GET', `/proxy/xtream/${sourceId}/stream/${streamId}/${type}?container=${container}`)
         },
