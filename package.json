@@ -1,6 +1,6 @@
 {
     "name": "calibreviewer",
-    "version": "3.0.3",
+    "version": "3.0.4",
     "description": "Modern IPTV Player",
     "license": "GPL-3.0-only",
     "main": "server/index.js",

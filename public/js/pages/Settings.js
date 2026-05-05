@@ -166,6 +166,16 @@ class SettingsPage {
 
         let latestUpdateUrl = '';
 
+        const canAutoInstall = (result) => {
+            if (!result?.updateAvailable) return false;
+            if (result?.checkedFolder && /\.(exe|msi)$/i.test(result.latestFile || '')) {
+                return true;
+            }
+
+            const candidate = `${result?.latestFile || ''} ${result?.downloadUrl || ''}`;
+            return /\.(exe|msi)(?:$|[?#])/i.test(candidate);
+        };
+
         const setStatus = (message, isError = false) => {
             statusEl.textContent = message;
             statusEl.style.color = isError ? 'var(--color-error)' : '';
@@ -270,6 +280,21 @@ class SettingsPage {
                 } else if (result?.releaseUrl) {
                     setUpdateLink(result.releaseUrl, 'Open Release');
                     result.message = `${result.message} Use the "Open Release" button to continue.`;
+                }
+
+                if (canAutoInstall(result) && window.desktopAPI.promptInstallUpdate) {
+                    const installResult = await window.desktopAPI.promptInstallUpdate(result);
+                    if (installResult?.started) {
+                        setStatus(installResult.message || 'Launching update installer...');
+                        return;
+                    }
+
+                    if (installResult?.declined) {
+                        result.message = installResult.message || result.message;
+                    } else if (installResult?.ok === false) {
+                        setStatus(installResult.message || 'Failed to start update installation.', true);
+                        return;
+                    }
                 }
 
                 setStatus(result?.message || 'Update check completed.');

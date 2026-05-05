@@ -1,4 +1,6 @@
 const { app, BrowserWindow, shell, ipcMain, dialog, Menu } = require('electron');
+const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const path = require('path');
 const fs = require('fs');
 
@@ -49,6 +51,136 @@ function extractVersionFromName(fileName) {
 
     const parts = match[1].split('.').slice(0, 3);
     return parts.join('.');
+}
+
+function isWindowsInstallerAsset(value) {
+    return typeof value === 'string' && /\.(exe|msi)(?:$|[?#])/i.test(value);
+}
+
+function sanitizeUpdateFileName(value) {
+    if (typeof value !== 'string') return '';
+    return path.basename(value).replace(/[<>:"/\\|?*]+/g, '_').trim();
+}
+
+function getUpdateDownloadPath(updateInfo) {
+    const directName = sanitizeUpdateFileName(updateInfo?.latestFile || '');
+    if (directName && isWindowsInstallerAsset(directName)) {
+        return path.join(getLocalUpdateFolder(), directName);
+    }
+
+    if (typeof updateInfo?.downloadUrl === 'string' && updateInfo.downloadUrl.trim()) {
+        try {
+            const parsed = new URL(updateInfo.downloadUrl);
+            const urlName = sanitizeUpdateFileName(parsed.pathname.split('/').pop() || '');
+            if (urlName && isWindowsInstallerAsset(urlName)) {
+                return path.join(getLocalUpdateFolder(), urlName);
+            }
+        } catch {
+            // ignore invalid download URL here; validation happens later
+        }
+    }
+
+    return '';
+}
+
+async function downloadUpdateAsset(downloadUrl, targetPath) {
+    const parsed = new URL(downloadUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Only http/https update URLs are supported.');
+    }
+
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+
+    const response = await fetch(parsed.toString(), {
+        headers: {
+            'User-Agent': `${APP_NAME}/${app.getVersion()}`,
+            'Accept': 'application/octet-stream,application/vnd.github+json'
+        }
+    });
+
+    if (!response.ok) {
+        throw new Error(`Download failed with status ${response.status}`);
+    }
+
+    if (!response.body) {
+        throw new Error('Update download did not return a file stream.');
+    }
+
+    await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(targetPath));
+    return targetPath;
+}
+
+async function launchUpdateInstaller(installerPath) {
+    const openError = await shell.openPath(installerPath);
+    if (openError) {
+        throw new Error(openError);
+    }
+
+    setImmediate(() => {
+        quitting = true;
+        app.quit();
+    });
+}
+
+async function promptAndInstallUpdate(updateInfo) {
+    const currentVersion = updateInfo?.currentVersion || app.getVersion();
+    const latestVersion = updateInfo?.latestVersion || 'unknown';
+    const latestFile = updateInfo?.latestFile || '';
+    const isLocalInstaller = Boolean(updateInfo?.checkedFolder && latestFile && isWindowsInstallerAsset(latestFile));
+    const hasDirectInstaller = isLocalInstaller || isWindowsInstallerAsset(updateInfo?.downloadUrl || '') || isWindowsInstallerAsset(latestFile);
+
+    if (!hasDirectInstaller) {
+        return {
+            ok: false,
+            message: 'No Windows installer asset was found for this update. Open the release page instead.'
+        };
+    }
+
+    const promptResult = await dialog.showMessageBox({
+        type: 'question',
+        buttons: ['Install Update', 'Later'],
+        defaultId: 0,
+        cancelId: 1,
+        title: 'Update Available',
+        message: `CalibreViewer ${latestVersion} is available.`,
+        detail: `Current version: ${currentVersion}\n${latestFile ? `Installer: ${latestFile}\n` : ''}Do you want to download and install the update now?`
+    });
+
+    if (promptResult.response !== 0) {
+        return {
+            ok: true,
+            declined: true,
+            message: `Update available: v${latestVersion}. Installation postponed.`
+        };
+    }
+
+    let installerPath = '';
+
+    if (isLocalInstaller) {
+        installerPath = path.join(updateInfo.checkedFolder, latestFile);
+        if (!fs.existsSync(installerPath)) {
+            throw new Error('The local update installer file could not be found.');
+        }
+    } else {
+        const targetPath = getUpdateDownloadPath(updateInfo);
+        if (!targetPath) {
+            throw new Error('Could not determine a valid installer filename for this update.');
+        }
+
+        installerPath = targetPath;
+        if (!fs.existsSync(installerPath)) {
+            await downloadUpdateAsset(updateInfo.downloadUrl, installerPath);
+        }
+    }
+
+    await launchUpdateInstaller(installerPath);
+
+    return {
+        ok: true,
+        started: true,
+        installerPath,
+        message: `Launching installer for v${latestVersion}. CalibreViewer will close to continue the update.`
+    };
 }
 
 function getUpdateConfigPath() {
@@ -428,6 +560,17 @@ function registerDesktopIpc() {
             return {
                 ok: false,
                 message: `Failed to open URL: ${error?.message || 'Unknown error'}`
+            };
+        }
+    });
+
+    ipcMain.handle('desktop:prompt-install-update', async (_event, updateInfo) => {
+        try {
+            return await promptAndInstallUpdate(updateInfo || {});
+        } catch (error) {
+            return {
+                ok: false,
+                message: `Failed to start update installation: ${error?.message || 'Unknown error'}`
             };
         }
     });
