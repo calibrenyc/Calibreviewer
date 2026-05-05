@@ -147,6 +147,155 @@ h4 {
   font-size: 1rem;
 }
 
+.welcome-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border-light);
+  background: linear-gradient(135deg, rgba(15, 18, 35, 0.95), rgba(10, 10, 15, 0.95));
+  min-height: 300px;
+  padding: clamp(24px, 4vw, 44px);
+  box-shadow: var(--shadow-lg);
+  isolation: isolate;
+}
+
+.welcome-layer {
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  filter: blur(32px);
+  opacity: 0.65;
+}
+
+.welcome-layer-a {
+  background: radial-gradient(circle at 20% 35%, rgba(67, 56, 202, 0.5), transparent 55%);
+  animation: welcomeFloatA 9s ease-in-out infinite;
+}
+
+.welcome-layer-b {
+  background: radial-gradient(circle at 80% 50%, rgba(16, 185, 129, 0.3), transparent 55%);
+  animation: welcomeFloatB 11s ease-in-out infinite;
+}
+
+.welcome-content {
+  position: relative;
+  z-index: 1;
+  max-width: 780px;
+}
+
+.welcome-kicker {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.72rem;
+  color: var(--color-text-secondary);
+  margin-bottom: 10px;
+}
+
+.welcome-title {
+  font-family: 'Outfit', 'Inter', sans-serif;
+  font-size: clamp(2rem, 4.2vw, 3.25rem);
+  line-height: 1.05;
+  margin-bottom: 10px;
+}
+
+.welcome-subtitle {
+  max-width: 640px;
+  color: var(--color-text-secondary);
+  font-size: 1.02rem;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+
+.welcome-grid {
+  margin-top: var(--space-md);
+  display: grid;
+  gap: var(--space-sm);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.welcome-card {
+  border: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(26, 26, 37, 0.92), rgba(18, 18, 26, 0.9));
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.welcome-card h3 {
+  margin-bottom: 6px;
+}
+
+.welcome-card p {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+}
+
+.welcome-loading {
+  padding: var(--space-lg);
+  color: var(--color-text-secondary);
+}
+
+.diagnostics-client-list {
+  margin-top: var(--space-sm);
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.diag-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(18, 18, 26, 0.95);
+  padding: 10px 12px;
+}
+
+.diag-active {
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.diag-stale {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.diag-header {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.diag-age {
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+}
+
+.diag-meta {
+  margin-top: 6px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--color-text-secondary);
+  font-size: 0.83rem;
+}
+
+@keyframes welcomeFloatA {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(18px, -10px, 0); }
+}
+
+@keyframes welcomeFloatB {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-16px, 10px, 0); }
+}
+
+@media (max-width: 900px) {
+  .welcome-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .hint {
   color: var(--color-text-muted);
   font-size: 0.875rem;

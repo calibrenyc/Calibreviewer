@@ -184,6 +184,16 @@ const API = {
         getDefaults: () => API.request('GET', '/settings/defaults')
     },
 
+    diagnostics: {
+        heartbeat: (data, requestOptions = {}) => API.request('POST', '/settings/diagnostics/heartbeat', data, requestOptions),
+        clients: (requestOptions = {}) => API.request('GET', '/settings/diagnostics/clients', null, requestOptions)
+    },
+
+    contentPack: {
+        export: () => API.request('GET', '/settings/content-pack/export'),
+        import: (payload) => API.request('POST', '/settings/content-pack/import', payload)
+    },
+
     // Users (admin only)
     users: {
         getAll: () => API.request('GET', '/auth/users'),

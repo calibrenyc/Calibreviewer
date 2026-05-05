@@ -270,15 +270,20 @@ function installGlobalActivityTracker() {
 
 class App {
     constructor() {
-        this.currentPage = 'home';
+        this.currentPage = 'welcome';
         this.pages = {};
         this.currentUser = null;
+        this.diagnosticsClientId = localStorage.getItem('diagnosticsClientId') || `client-${Math.random().toString(36).slice(2, 12)}`;
+        this.diagnosticsSessionName = localStorage.getItem('diagnosticsSessionName') || '';
+        this.diagnosticsTimer = null;
         this.keyboardOnlyMode = false;
         this.keyboardNavSectionIndex = 0;
         this.keyboardNavItemIndex = 0;
         this.keyboardNavSections = [];
         this.handleKeyboardOnlyNavigation = this.handleKeyboardOnlyNavigation.bind(this);
         this.syncKeyboardOnlyModeFromEvent = this.syncKeyboardOnlyModeFromEvent.bind(this);
+
+        localStorage.setItem('diagnosticsClientId', this.diagnosticsClientId);
 
         // Initialize components
         this.player = new VideoPlayer();
@@ -287,6 +292,7 @@ class App {
         this.epgGuide = new EpgGuide();
 
         // Initialize page controllers
+        this.pages.welcome = new WelcomePage(this);
         this.pages.home = new HomePage(this);
         this.pages.live = new LivePage(this);
         this.pages.guide = new GuidePage(this);
@@ -301,6 +307,11 @@ class App {
     async init() {
         // Check authentication first
         await this.checkAuth();
+
+        if (this.currentUser?.username) {
+            this.diagnosticsSessionName = this.currentUser.username;
+            localStorage.setItem('diagnosticsSessionName', this.diagnosticsSessionName);
+        }
 
         await this.loadAndApplyThemeFromServer();
 
@@ -434,8 +445,10 @@ class App {
 
         // Navigate to the page from URL hash, or default to home
         const hash = window.location.hash.slice(1); // Remove #
-        const initialPage = hash && this.pages[hash] ? hash : 'home';
+        const initialPage = hash && this.pages[hash] ? hash : 'welcome';
         this.navigateTo(initialPage, true); // true = replace history (don't add)
+
+        this.startDiagnosticsHeartbeat();
 
         console.log('CalibreViewer initialized');
     }
@@ -745,6 +758,7 @@ class App {
             }
 
             localStorage.removeItem('authToken');
+            this.stopDiagnosticsHeartbeat();
             window.location.replace('/login.html');
         });
 
@@ -787,8 +801,88 @@ class App {
             this.pages[pageName].show();
         }
 
+        this.sendDiagnosticsHeartbeat({ immediate: true }).catch(() => {
+            // ignore diagnostics heartbeat failures
+        });
+
         if (this.keyboardOnlyMode) {
             requestAnimationFrame(() => this.resetKeyboardFocus());
+        }
+    }
+
+    getPlaybackSnapshot() {
+        const liveVideo = this.player?.video;
+        const watchVideo = this.pages?.watch?.video;
+
+        const liveActive = !!(liveVideo && this.currentPage === 'live' && this.player?.currentChannel);
+        const watchActive = !!(watchVideo && this.currentPage === 'watch' && this.pages?.watch?.content);
+
+        const liveState = liveVideo ? {
+            paused: !!liveVideo.paused,
+            muted: !!liveVideo.muted,
+            volume: Number(liveVideo.volume ?? 0),
+            readyState: Number(liveVideo.readyState ?? 0),
+            currentTime: Number(liveVideo.currentTime ?? 0),
+            channelName: this.player?.currentChannel?.name || null
+        } : null;
+
+        const watchState = watchVideo ? {
+            paused: !!watchVideo.paused,
+            muted: !!watchVideo.muted,
+            volume: Number(watchVideo.volume ?? 0),
+            readyState: Number(watchVideo.readyState ?? 0),
+            currentTime: Number(watchVideo.currentTime ?? 0),
+            title: this.pages?.watch?.content?.name || this.pages?.watch?.content?.title || null
+        } : null;
+
+        return {
+            mode: watchActive ? 'vod' : (liveActive ? 'live' : 'idle'),
+            live: liveState,
+            vod: watchState
+        };
+    }
+
+    async sendDiagnosticsHeartbeat({ immediate = false } = {}) {
+        if (!this.currentUser) return;
+
+        await API.diagnostics.heartbeat({
+            clientId: this.diagnosticsClientId,
+            sessionName: this.diagnosticsSessionName || this.currentUser.username,
+            page: this.currentPage,
+            appVersion: document.getElementById('version-badge')?.textContent?.replace(/^v/, '') || null,
+            playback: this.getPlaybackSnapshot(),
+            clientInfo: {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform || null,
+                language: navigator.language || null,
+                viewport: `${window.innerWidth}x${window.innerHeight}`
+            },
+            diagnostics: {
+                online: navigator.onLine,
+                timestamp: new Date().toISOString(),
+                immediate
+            }
+        }, { background: true });
+    }
+
+    startDiagnosticsHeartbeat() {
+        this.stopDiagnosticsHeartbeat();
+
+        this.sendDiagnosticsHeartbeat({ immediate: true }).catch(() => {
+            // ignore diagnostics heartbeat failures
+        });
+
+        this.diagnosticsTimer = setInterval(() => {
+            this.sendDiagnosticsHeartbeat().catch(() => {
+                // ignore diagnostics heartbeat failures
+            });
+        }, 10000);
+    }
+
+    stopDiagnosticsHeartbeat() {
+        if (this.diagnosticsTimer) {
+            clearInterval(this.diagnosticsTimer);
+            this.diagnosticsTimer = null;
         }
     }
 }

@@ -43,7 +43,14 @@
           <span class="now-playing-icon">▶</span>
           <span class="now-playing-text" id="now-playing-text">Now Playing</span>
         </a>
-        <a href="#" class="nav-link active" data-page="home">
+        <a href="#" class="nav-link active" data-page="welcome">
+          <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
+              class="icon">
+              <path d="M12 3l8 6v12h-5v-7H9v7H4V9l8-6z" />
+            </svg></span>
+          <span>Welcome</span>
+        </a>
+        <a href="#" class="nav-link" data-page="home">
           <span class="nav-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"
               class="icon">
               <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
@@ -94,8 +101,13 @@
 
     <!-- Main Content Area -->
     <main class="main-content">
+      <!-- Welcome Page -->
+      <div id="page-welcome" class="page active">
+        <div class="welcome-loading">Loading welcome experience...</div>
+      </div>
+
       <!-- Home (Dashboard) Page -->
-      <div id="page-home" class="page active">
+      <div id="page-home" class="page">
         <!-- Content will be rendered by HomePage.js -->
         <div class="loading-state">Loading Dashboard...</div>
       </div>
@@ -790,6 +802,37 @@
 
           <!-- Manage Content Tab -->
           <div id="tab-content" class="tab-content">
+            <div class="settings-section">
+              <h3>Client Diagnostics</h3>
+              <p class="hint">View active clients and what screen/playback state they currently report.</p>
+              <div class="setting-item" style="gap: var(--space-sm);">
+                <button class="btn btn-sm btn-secondary" id="refresh-diagnostics">Refresh Clients</button>
+                <span id="diagnostics-summary" class="hint">No diagnostics loaded yet.</span>
+              </div>
+              <div id="diagnostics-client-list" class="diagnostics-client-list">
+                <p class="hint">No client snapshots yet.</p>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <h3>Content Pack</h3>
+              <p class="hint">Export sources, hidden items, favorites, and settings to replicate this setup on another user.</p>
+              <div class="setting-item" style="gap: var(--space-sm); flex-wrap: wrap;">
+                <button class="btn btn-sm btn-primary" id="export-content-pack">Export Content Pack</button>
+                <button class="btn btn-sm btn-secondary" id="import-content-pack">Import Content Pack</button>
+                <label style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" id="content-import-merge" checked>
+                  <span class="hint">Merge instead of replace</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:8px;">
+                  <input type="checkbox" id="content-import-settings" checked>
+                  <span class="hint">Include settings</span>
+                </label>
+              </div>
+              <input type="file" id="content-pack-file" accept="application/json" style="display:none;">
+              <p id="content-pack-status" class="hint">Content pack tools are ready.</p>
+            </div>
+
             <div class="content-browser">
               <div class="content-browser-header">
                 <div class="content-type-toggle">
@@ -1164,6 +1207,7 @@
   <script src="/js/components/ChannelList.js?v=3"></script>
   <script src="/js/components/SourceManager.js?v=2"></script>
   <script src="/js/components/EpgGuide.js?v=2"></script>
+  <script src="/js/pages/WelcomePage.js?v=1"></script>
   <script src="/js/pages/HomePage.js?v=2"></script>
   <script src="/js/pages/LivePage.js?v=2"></script>
   <script src="/js/pages/Guide.js?v=2"></script>
