@@ -1,0 +1,33 @@
+{
+  "appId": "com.calibreviewer.assist",
+  "productName": "CalibreViewer Assist",
+  "artifactName": "CalibreViewer-Assist-Setup-${version}.${ext}",
+  "extraMetadata": {
+    "main": "electron/assist-main.js"
+  },
+  "directories": {
+    "output": "release-assist"
+  },
+  "files": [
+    "electron/**/*",
+    "public/**/*",
+    "server/**/*",
+    "package.json"
+  ],
+  "asarUnpack": [
+    "**/*.node",
+    "**/ffmpeg-static/**",
+    "**/@ffprobe-installer/**"
+  ],
+  "win": {
+    "target": [
+      "nsis"
+    ],
+    "executableName": "CalibreViewerAssist"
+  },
+  "nsis": {
+    "deleteAppDataOnUninstall": false,
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}

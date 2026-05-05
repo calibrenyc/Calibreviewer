@@ -1,6 +1,6 @@
 {
     "name": "calibreviewer",
-    "version": "3.0.11",
+    "version": "3.0.12",
     "description": "Modern IPTV Player",
     "license": "GPL-3.0-only",
     "main": "server/index.js",
@@ -13,7 +13,8 @@
         "rebuild:electron": "electron-rebuild -f -w better-sqlite3",
         "postinstall": "electron-builder install-app-deps",
         "dist": "electron-builder",
-        "dist:win": "electron-builder --win --x64"
+        "dist:win": "electron-builder --win --x64",
+        "dist:assist": "electron-builder --config electron-builder.assist.json --win --x64"
     },
     "dependencies": {
         "@ffprobe-installer/ffprobe": "^2.1.2",
