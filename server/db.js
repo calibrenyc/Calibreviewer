@@ -99,6 +99,8 @@ function getDefaultThemeColors() {
     '--color-bg-active': '#2a2a3a',
     '--color-accent': '#6366f1',
     '--color-accent-hover': '#818cf8',
+    '--color-welcome-1': '#6366f1',
+    '--color-welcome-2': '#818cf8',
     '--color-success': '#10b981',
     '--color-warning': '#f59e0b',
     '--color-error': '#ef4444',

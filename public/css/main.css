@@ -19,6 +19,9 @@
   --color-accent-hover: #818cf8;
   --color-accent-dim: rgba(99, 102, 241, 0.2);
 
+  --color-welcome-1: #6366f1;
+  --color-welcome-2: #818cf8;
+
   --color-success: #10b981;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
@@ -170,7 +173,7 @@ h4 {
 .welcome-layer-a {
   background: radial-gradient(
     circle at 20% 35%,
-    color-mix(in srgb, var(--color-accent) 60%, var(--color-accent-hover) 40% / 0.5),
+    color-mix(in srgb, var(--color-welcome-1) 70%, transparent 30% / 0.5),
     transparent 55%
   );
   animation: welcomeFloatA 9s ease-in-out infinite;
@@ -179,7 +182,7 @@ h4 {
 .welcome-layer-b {
   background: radial-gradient(
     circle at 80% 50%,
-    color-mix(in srgb, var(--color-accent-hover) 70%, var(--color-accent) 30% / 0.35),
+    color-mix(in srgb, var(--color-welcome-2) 70%, transparent 30% / 0.35),
     transparent 55%
   );
   animation: welcomeFloatB 11s ease-in-out infinite;

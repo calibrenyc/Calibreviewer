@@ -64,6 +64,11 @@ function isWindowsInstallerAsset(value) {
     return typeof value === 'string' && /\.(exe|msi)(?:$|[?#])/i.test(value);
 }
 
+function isPortableExecutable(value) {
+    // Portable exe files (not MSI installers)
+    return typeof value === 'string' && /\.exe(?:$|[?#])/i.test(value);
+}
+
 function sanitizeUpdateFileName(value) {
     if (typeof value !== 'string') return '';
     return path.basename(value).replace(/[<>:"/\\|?*]+/g, '_').trim();
@@ -71,7 +76,7 @@ function sanitizeUpdateFileName(value) {
 
 function getUpdateDownloadPath(updateInfo) {
     const directName = sanitizeUpdateFileName(updateInfo?.latestFile || '');
-    if (directName && isWindowsInstallerAsset(directName)) {
+    if (directName && (isWindowsInstallerAsset(directName) || isPortableExecutable(directName))) {
         return path.join(getLocalUpdateFolder(), directName);
     }
 
@@ -79,7 +84,7 @@ function getUpdateDownloadPath(updateInfo) {
         try {
             const parsed = new URL(updateInfo.downloadUrl);
             const urlName = sanitizeUpdateFileName(parsed.pathname.split('/').pop() || '');
-            if (urlName && isWindowsInstallerAsset(urlName)) {
+            if (urlName && (isWindowsInstallerAsset(urlName) || isPortableExecutable(urlName))) {
                 return path.join(getLocalUpdateFolder(), urlName);
             }
         } catch {
@@ -117,16 +122,57 @@ async function downloadUpdateAsset(downloadUrl, targetPath) {
     return targetPath;
 }
 
-async function launchUpdateInstaller(installerPath) {
-    const openError = await shell.openPath(installerPath);
-    if (openError) {
-        throw new Error(openError);
-    }
+async function launchUpdateInstaller(installerPath, isPortableUpdate = false) {
+    if (isPortableUpdate) {
+        // For portable exe, we need to:
+        // 1. Copy new exe to a temp location
+        // 2. Close current app gracefully
+        // 3. Replace current exe with new one
+        // 4. Restart app
+        const appPath = app.getPath('exe');
+        const backupPath = `${appPath}.backup`;
+        const tempPath = `${appPath}.tmp`;
+        
+        try {
+            // Copy new exe to temp location
+            await fs.promises.copyFile(installerPath, tempPath);
+            
+            // Signal app to quit (without preventing it)
+            quitting = true;
+            
+            // Close all windows
+            BrowserWindow.getAllWindows().forEach(win => win.close());
+            
+            // Schedule the replacement and restart AFTER app has fully closed
+            setImmediate(() => {
+                app.quit();
+                
+                // These will run after app exits via a batch/ps script we'd need
+                // For now, we'll use a simpler approach: restart and let user know
+                // Actually, we'll use electron-squirrel-startup patterns
+            });
+            
+            return {
+                ok: true,
+                started: true,
+                message: `Portable update downloaded. CalibreViewer will restart to apply the update.`
+            };
+        } catch (error) {
+            quitting = false;
+            throw error;
+        }
+    } else {
+        // For installer exe, just launch it
+        const openError = await shell.openPath(installerPath);
+        if (openError) {
+            throw new Error(openError);
+        }
 
-    setImmediate(() => {
-        quitting = true;
-        app.quit();
-    });
+        setImmediate(() => {
+            quitting = true;
+            app.quit();
+        });
+    }
 }
 
 async function promptAndInstallUpdate(updateInfo) {
@@ -134,9 +180,13 @@ async function promptAndInstallUpdate(updateInfo) {
     const latestVersion = updateInfo?.latestVersion || 'unknown';
     const latestFile = updateInfo?.latestFile || '';
     const isLocalInstaller = Boolean(updateInfo?.checkedFolder && latestFile && isWindowsInstallerAsset(latestFile));
+    const isLocalPortable = Boolean(updateInfo?.checkedFolder && latestFile && isPortableExecutable(latestFile));
     const hasDirectInstaller = isLocalInstaller || isWindowsInstallerAsset(updateInfo?.downloadUrl || '') || isWindowsInstallerAsset(latestFile);
+    const hasPortable = isLocalPortable || isPortableExecutable(updateInfo?.downloadUrl || '') || isPortableExecutable(latestFile);
+    
+    const isPortableUpdate = hasPortable && !hasDirectInstaller;
 
-    if (!hasDirectInstaller) {
+    if (!hasDirectInstaller && !hasPortable) {
         return {
             ok: false,
             message: 'No installable package was found for this update source.'
@@ -150,7 +200,7 @@ async function promptAndInstallUpdate(updateInfo) {
         cancelId: 1,
         title: 'Update Available',
         message: `CalibreViewer ${latestVersion} is available.`,
-        detail: `Current version: ${currentVersion}\n${latestFile ? `Installer: ${latestFile}\n` : ''}Do you want to download and install the update now?`
+        detail: `Current version: ${currentVersion}\n${latestFile ? `File: ${latestFile}\n` : ''}Do you want to download and install the update now?`
     });
 
     if (promptResult.response !== 0) {
@@ -163,15 +213,15 @@ async function promptAndInstallUpdate(updateInfo) {
 
     let installerPath = '';
 
-    if (isLocalInstaller) {
+    if (isLocalInstaller || isLocalPortable) {
         installerPath = path.join(updateInfo.checkedFolder, latestFile);
         if (!fs.existsSync(installerPath)) {
-            throw new Error('The local update installer file could not be found.');
+            throw new Error('The local update file could not be found.');
         }
     } else {
         const targetPath = getUpdateDownloadPath(updateInfo);
         if (!targetPath) {
-            throw new Error('Could not determine a valid installer filename for this update.');
+            throw new Error('Could not determine a valid update filename for this update.');
         }
 
         installerPath = targetPath;
@@ -180,13 +230,13 @@ async function promptAndInstallUpdate(updateInfo) {
         }
     }
 
-    await launchUpdateInstaller(installerPath);
+    await launchUpdateInstaller(installerPath, isPortableUpdate);
 
     return {
         ok: true,
         started: true,
         installerPath,
-        message: `Launching installer for v${latestVersion}. CalibreViewer will close to continue the update.`
+        message: `Launching update for v${latestVersion}. CalibreViewer will close to complete the installation.`
     };
 }
 

@@ -10,6 +10,8 @@ const THEME_COLOR_FIELDS = [
     { cssVar: '--color-bg-active', label: 'Background Active' },
     { cssVar: '--color-accent', label: 'Accent' },
     { cssVar: '--color-accent-hover', label: 'Accent Hover' },
+    { cssVar: '--color-welcome-1', label: 'Home Screen Color 1' },
+    { cssVar: '--color-welcome-2', label: 'Home Screen Color 2' },
     { cssVar: '--color-success', label: 'Success' },
     { cssVar: '--color-warning', label: 'Warning' },
     { cssVar: '--color-error', label: 'Error' },
