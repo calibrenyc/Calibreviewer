@@ -168,12 +168,20 @@ h4 {
 }
 
 .welcome-layer-a {
-  background: radial-gradient(circle at 20% 35%, rgba(67, 56, 202, 0.5), transparent 55%);
+  background: radial-gradient(
+    circle at 20% 35%,
+    color-mix(in srgb, var(--color-accent) 60%, var(--color-accent-hover) 40% / 0.5),
+    transparent 55%
+  );
   animation: welcomeFloatA 9s ease-in-out infinite;
 }
 
 .welcome-layer-b {
-  background: radial-gradient(circle at 80% 50%, rgba(16, 185, 129, 0.3), transparent 55%);
+  background: radial-gradient(
+    circle at 80% 50%,
+    color-mix(in srgb, var(--color-accent-hover) 70%, var(--color-accent) 30% / 0.35),
+    transparent 55%
+  );
   animation: welcomeFloatB 11s ease-in-out infinite;
 }
 
