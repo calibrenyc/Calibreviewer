@@ -784,6 +784,16 @@ class App {
             this.navigateTo(link.dataset.page);
         });
 
+        // Some environments swallow click on animated overlays; pointerdown keeps
+        // page navigation responsive for mouse/touch.
+        this.pageMenu.addEventListener('pointerdown', (event) => {
+            const link = event.target.closest('.nav-link[data-page]');
+            if (!link) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.navigateTo(link.dataset.page);
+        });
+
         this.pageMenuOverlay.addEventListener('click', () => this.closePageMenu());
 
         document.addEventListener('click', (event) => {

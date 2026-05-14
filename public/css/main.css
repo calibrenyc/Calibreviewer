@@ -5492,7 +5492,6 @@ body {
   width: min(360px, 86vw);
   display: flex;
   flex-direction: column;
-  z-index: 300;
   gap: 6px;
   padding: calc(max(var(--safe-area-inset-top), 16px) + 16px) 14px max(var(--safe-area-inset-bottom), 16px);
   background: linear-gradient(180deg, rgba(10, 12, 18, 0.97), rgba(8, 9, 14, 0.96));
@@ -5504,7 +5503,7 @@ body {
   visibility: hidden;
   pointer-events: none;
   transition: transform 220ms ease, opacity 220ms ease, visibility 220ms ease;
-  z-index: 260;
+  z-index: 10000;
 }
 
 .navbar-menu.active {
@@ -5534,12 +5533,23 @@ body {
   visibility: hidden;
   pointer-events: none;
   transition: opacity 200ms ease, visibility 200ms ease;
-  z-index: 240;
+  z-index: 9000;
 }
 
 .nav-sidebar-overlay.active {
   opacity: 1;
   visibility: visible;
+  pointer-events: auto;
+}
+
+.navbar-menu.active .nav-link,
+.navbar-menu.active .nav-link * {
+  pointer-events: auto;
+}
+
+body.keyboard-only-mode .page-switcher,
+body.keyboard-only-mode .navbar-menu.active .nav-link,
+body.keyboard-only-mode .navbar-menu.active .nav-link * {
   pointer-events: auto;
 }
 
