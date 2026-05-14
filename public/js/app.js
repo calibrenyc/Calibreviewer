@@ -768,6 +768,19 @@ class App {
 
         if (!this.pageMenuToggle || !this.pageMenu || !this.pageMenuOverlay) return;
 
+        // Hoist sidebar elements to body so they are not trapped in any local
+        // stacking contexts and can always render/click above app content.
+        if (this.pageMenuOverlay.parentElement !== document.body) {
+            document.body.appendChild(this.pageMenuOverlay);
+        }
+        if (this.pageMenu.parentElement !== document.body) {
+            document.body.appendChild(this.pageMenu);
+        }
+
+        if (!this.pageMenu.hasAttribute('tabindex')) {
+            this.pageMenu.setAttribute('tabindex', '-1');
+        }
+
         this.pageMenuToggle.addEventListener('click', (event) => {
             event.preventDefault();
             event.stopPropagation();
@@ -824,6 +837,7 @@ class App {
         this.pageMenu.classList.add('active');
         this.pageMenuOverlay.classList.add('active');
         this.pageMenuToggle.setAttribute('aria-expanded', 'true');
+        this.pageMenu.focus();
     }
 
     closePageMenu() {

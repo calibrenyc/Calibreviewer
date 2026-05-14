@@ -5565,6 +5565,40 @@ body.page-menu-open #navbar-menu .nav-link {
   cursor: pointer;
 }
 
+body.page-menu-open {
+  overflow: hidden;
+}
+
+body.page-menu-open #nav-sidebar-overlay {
+  z-index: 2147483000 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  background: rgba(6, 10, 18, 0.58) !important;
+  backdrop-filter: blur(7px) saturate(120%) !important;
+}
+
+body.page-menu-open #navbar-menu {
+  z-index: 2147483001 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateX(0) !important;
+  isolation: isolate;
+}
+
+body.page-menu-open .main-content {
+  filter: blur(4px) brightness(0.78);
+  pointer-events: none !important;
+  user-select: none;
+}
+
+body.page-menu-open .navbar-brand {
+  filter: blur(1px) brightness(0.9);
+}
+
+body.page-menu-open #page-menu-toggle {
+  filter: none !important;
+}
+
 .mobile-menu-toggle {
   display: none;
 }
