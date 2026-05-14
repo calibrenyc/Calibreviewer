@@ -3,6 +3,7 @@ const { sources, settings } = require('../db'); // For source config and setting
 const xtreamApi = require('./xtreamApi');
 const m3uParser = require('./m3uParser');
 const epgParser = require('./epgParser');
+const torboxApi = require('./torboxApi');
 
 // Sync tracking
 const activeSyncs = new Set(); // sourceId
@@ -136,6 +137,8 @@ class SyncService {
                 await this.syncXtream(source);
             } else if (source.type === 'm3u') {
                 await this.syncM3u(source);
+            } else if (source.type === 'torbox') {
+                await this.syncTorbox(source);
             } else if (source.type === 'epg') {
                 await this.syncEpg(source);
             }
@@ -560,6 +563,100 @@ class SyncService {
 
         await this.saveCategories(source.id, 'live', categories);
         console.log(`[Sync] M3U sync complete for ${source.name}`);
+    }
+
+    /**
+     * Torbox Sync Logic
+     * Pulls user media list and maps entries to movie/series items.
+     */
+    async syncTorbox(source) {
+        console.log(`[Sync] Fetching Torbox library for ${source.name}`);
+        const api = torboxApi.createFromSource(source);
+        const db = getDb();
+
+        // Torbox lists are re-materialized each sync to avoid stale entries.
+        db.prepare("DELETE FROM playlist_items WHERE source_id = ? AND type IN ('movie', 'series')").run(source.id);
+        db.prepare("DELETE FROM categories WHERE source_id = ? AND type IN ('movie', 'series')").run(source.id);
+
+        const [torrents, webdl, usenet] = await Promise.all([
+            api.getTorrents().catch(() => []),
+            api.getWebDownloads().catch(() => []),
+            api.getUsenetDownloads().catch(() => [])
+        ]);
+
+        const combined = [
+            ...torrents.map(item => ({ ...item, _torboxType: 'torrent' })),
+            ...webdl.map(item => ({ ...item, _torboxType: 'webdl' })),
+            ...usenet.map(item => ({ ...item, _torboxType: 'usenet' }))
+        ];
+
+        const movieItems = [];
+        const seriesItems = [];
+
+        const isVideoFile = (name) => /\.(mkv|mp4|avi|mov|wmv|m4v|ts|m2ts)$/i.test(String(name || ''));
+        const detectSeries = (name) => /(S\d{1,2}E\d{1,2}|Season\s*\d+|Episode\s*\d+)/i.test(String(name || ''));
+
+        for (const item of combined) {
+            const numericId = item.id || item.torrent_id || item.web_id || item.usenet_id;
+            if (!numericId) continue;
+
+            const backendType = item._torboxType;
+            const baseId = `${backendType}:${numericId}`;
+            const title = item.name || item.title || item.filename || `Torbox Item ${numericId}`;
+            const rawFiles = Array.isArray(item.files) ? item.files : (Array.isArray(item.file_list) ? item.file_list : []);
+            const videoFiles = rawFiles.filter(file => isVideoFile(file?.name || file?.filename || file?.path || ''));
+            const largestVideo = [...videoFiles].sort((a, b) => (b?.size || b?.bytes || 0) - (a?.size || a?.bytes || 0))[0] || null;
+            const primaryFileId = largestVideo?.id || largestVideo?.file_id || 0;
+
+            const normalizedData = {
+                ...item,
+                torbox: {
+                    backendType,
+                    itemId: numericId,
+                    primaryFileId,
+                    files: rawFiles
+                }
+            };
+
+            const looksLikeSeries = detectSeries(title) || videoFiles.some(file => detectSeries(file?.name || file?.filename || file?.path || ''));
+
+            if (looksLikeSeries) {
+                seriesItems.push({
+                    ...normalizedData,
+                    series_id: baseId,
+                    name: title,
+                    category_id: 'torbox_series',
+                    cover: item.poster || item.cover || item.image || null,
+                    rating: item.rating || null,
+                    releaseDate: item.year || item.release_date || null,
+                    last_modified: item.updated_at || item.created_at || null,
+                    container_extension: (largestVideo?.name || '').split('.').pop() || 'mkv'
+                });
+            } else {
+                movieItems.push({
+                    ...normalizedData,
+                    stream_id: baseId,
+                    name: title,
+                    category_id: 'torbox_movies',
+                    stream_icon: item.poster || item.cover || item.image || null,
+                    container_extension: (largestVideo?.name || '').split('.').pop() || 'mkv',
+                    rating: item.rating || null,
+                    added: item.created_at || item.updated_at || null
+                });
+            }
+        }
+
+        await this.saveCategories(source.id, 'movie', [{ category_id: 'torbox_movies', category_name: 'Torbox Movies', parent_id: null }]);
+        await this.saveCategories(source.id, 'series', [{ category_id: 'torbox_series', category_name: 'Torbox Series', parent_id: null }]);
+
+        if (movieItems.length > 0) {
+            await this.saveStreams(source.id, 'movie', movieItems);
+        }
+        if (seriesItems.length > 0) {
+            await this.saveStreams(source.id, 'series', seriesItems);
+        }
+
+        console.log(`[Sync] Torbox sync complete for ${source.name}: ${movieItems.length} movies, ${seriesItems.length} series`);
     }
 
     /**

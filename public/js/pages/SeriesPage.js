@@ -214,7 +214,7 @@ class SeriesPage {
     async loadSources(requestOptions = {}) {
         try {
             const allSources = await API.sources.getAll(requestOptions);
-            this.sources = allSources.filter(s => s.type === 'xtream' && s.enabled);
+            this.sources = allSources.filter(s => ['xtream', 'torbox'].includes(s.type) && s.enabled);
             this.populateSourceOptions();
             this.persistState();
         } catch (err) {

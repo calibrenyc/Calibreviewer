@@ -5,6 +5,7 @@ const { getDb } = require('../db/sqlite');
 const xtreamApi = require('../services/xtreamApi');
 const syncService = require('../services/syncService');
 const m3uParser = require('../services/m3uParser');
+const torboxApi = require('../services/torboxApi');
 
 // Get all sources
 router.get('/', async (req, res) => {
@@ -63,17 +64,22 @@ router.get('/:id', async (req, res) => {
 // Create source
 router.post('/', async (req, res) => {
     try {
-        const { type, name, url, username, password } = req.body;
+        const { type, name, url, username, password, apiKey } = req.body;
+        const resolvedPassword = password || apiKey || null;
 
         if (!type || !name || !url) {
             return res.status(400).json({ error: 'Type, name, and URL are required' });
         }
 
-        if (!['xtream', 'm3u', 'epg'].includes(type)) {
+        if (!['xtream', 'm3u', 'torbox', 'epg'].includes(type)) {
             return res.status(400).json({ error: 'Invalid source type' });
         }
 
-        const source = await sources.create({ type, name, url, username, password });
+        if (type === 'torbox' && !resolvedPassword) {
+            return res.status(400).json({ error: 'Torbox API key is required' });
+        }
+
+        const source = await sources.create({ type, name, url, username, password: resolvedPassword });
         // Trigger Sync
         syncService.syncSource(source.id).catch(console.error);
         res.status(201).json(source);
@@ -91,12 +97,13 @@ router.put('/:id', async (req, res) => {
             return res.status(404).json({ error: 'Source not found' });
         }
 
-        const { name, url, username, password } = req.body;
+        const { name, url, username, password, apiKey } = req.body;
+        const resolvedPassword = password || apiKey;
         const updated = await sources.update(req.params.id, {
             name: name || existing.name,
             url: url || existing.url,
             username: username !== undefined ? username : existing.username,
-            password: password !== undefined ? password : existing.password
+            password: resolvedPassword !== undefined ? resolvedPassword : existing.password
         });
         // Trigger Sync (if critical fields changed? safely just trigger it)
         syncService.syncSource(parseInt(req.params.id)).catch(console.error);
@@ -188,6 +195,10 @@ router.post('/:id/test', async (req, res) => {
         if (source.type === 'xtream') {
             const result = await xtreamApi.authenticate(source.url, source.username, source.password);
             res.json({ success: true, data: result });
+        } else if (source.type === 'torbox') {
+            const api = torboxApi.createFromSource(source);
+            const me = await api.getUser();
+            res.json({ success: true, message: 'Torbox API key is valid', data: me });
         } else if (source.type === 'm3u') {
             const response = await fetch(source.url);
             const text = await response.text();

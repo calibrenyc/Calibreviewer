@@ -1,12 +1,13 @@
 /**
  * Source Manager Component
- * Handles adding, editing, and deleting sources (Xtream, M3U, EPG)
+ * Handles adding, editing, and deleting sources (Xtream, M3U, Torbox, EPG)
  */
 
 class SourceManager {
     constructor() {
         this.xtreamList = document.getElementById('xtream-list');
         this.m3uList = document.getElementById('m3u-list');
+        this.torboxList = document.getElementById('torbox-list');
         this.epgList = document.getElementById('epg-list');
 
         // Content browser state
@@ -65,6 +66,7 @@ class SourceManager {
         // Add source buttons
         document.getElementById('add-xtream').addEventListener('click', () => this.showAddModal('xtream'));
         document.getElementById('add-m3u').addEventListener('click', () => this.showAddModal('m3u'));
+        document.getElementById('add-torbox').addEventListener('click', () => this.showAddModal('torbox'));
         document.getElementById('add-epg').addEventListener('click', () => this.showAddModal('epg'));
 
         // Initialize content browser
@@ -155,6 +157,7 @@ class SourceManager {
 
             this.renderSourceList(this.xtreamList, sources.filter(s => s.type === 'xtream'), 'xtream');
             this.renderSourceList(this.m3uList, sources.filter(s => s.type === 'm3u'), 'm3u');
+            this.renderSourceList(this.torboxList, sources.filter(s => s.type === 'torbox'), 'torbox');
             this.renderSourceList(this.epgList, sources.filter(s => s.type === 'epg'), 'epg');
         } catch (err) {
             console.error('Error loading sources:', err);
@@ -170,7 +173,7 @@ class SourceManager {
             return;
         }
 
-        const icons = { xtream: Icons.live, m3u: Icons.guide, epg: Icons.series };
+        const icons = { xtream: Icons.live, m3u: Icons.guide, torbox: Icons.movies, epg: Icons.series };
 
         container.innerHTML = sources.map(source => `
       <div class="source-item ${source.enabled ? '' : 'disabled'}" data-id="${source.id}">
@@ -212,7 +215,7 @@ class SourceManager {
         const body = document.getElementById('modal-body');
         const footer = document.getElementById('modal-footer');
 
-        const titles = { xtream: 'Add Xtream Connection', m3u: 'Add M3U Playlist', epg: 'Add EPG Source' };
+        const titles = { xtream: 'Add Xtream Connection', m3u: 'Add M3U Playlist', torbox: 'Add Torbox Source', epg: 'Add EPG Source' };
         title.textContent = titles[type];
 
         body.innerHTML = this.getSourceForm(type);
@@ -271,12 +274,12 @@ class SourceManager {
       </div>
     `;
 
-        const urlField = `
+                const urlField = `
       <div class="form-group">
-        <label for="source-url">${type === 'xtream' ? 'Server URL' : 'URL'}</label>
+                <label for="source-url">${type === 'xtream' ? 'Server URL' : (type === 'torbox' ? 'API URL' : 'URL')}</label>
         <input type="text" id="source-url" class="form-input" 
-               placeholder="${type === 'xtream' ? 'http://server.com:port' : 'https://example.com/playlist.m3u'}" 
-               value="${source.url || ''}">
+                             placeholder="${type === 'xtream' ? 'http://server.com:port' : (type === 'torbox' ? 'https://api.torbox.app' : 'https://example.com/playlist.m3u')}" 
+                             value="${source.url || (type === 'torbox' ? 'https://api.torbox.app' : '')}">
       </div>
     `;
 
@@ -296,6 +299,19 @@ class SourceManager {
       `;
         }
 
+                if (type === 'torbox') {
+                        return `
+                ${nameField}
+                ${urlField}
+                <div class="form-group">
+                    <label for="source-password">API Key</label>
+                    <input type="password" id="source-password" class="form-input"
+                                 placeholder="Paste your Torbox API key"
+                                 value="${source.password && !source.password.includes('•') ? source.password : ''}">
+                </div>
+            `;
+                }
+
         return nameField + urlField;
     }
 
@@ -310,6 +326,11 @@ class SourceManager {
 
         if (!name || !url) {
             alert('Name and URL are required');
+            return;
+        }
+
+        if (type === 'torbox' && !password) {
+            alert('Torbox API key is required');
             return;
         }
 
@@ -366,7 +387,7 @@ class SourceManager {
 
         try {
             const data = { name, url };
-            if (type === 'xtream') {
+            if (type === 'xtream' || type === 'torbox') {
                 data.username = username;
                 if (password) data.password = password;
             }
@@ -516,6 +537,8 @@ class SourceManager {
                     await window.app.channelList.loadChannels();
                 }
                 alert('M3U playlist synced & refreshed!');
+            } else if (type === 'torbox') {
+                alert('Torbox library synced. Open Movies/Series to browse the updated catalog.');
             }
 
             if (btn) {
@@ -627,7 +650,7 @@ class SourceManager {
             // Keep the placeholder option
             select.innerHTML = '<option value="">Select a source...</option>';
 
-            sources.filter(s => s.type === 'xtream' || s.type === 'm3u').forEach(source => {
+            sources.filter(s => s.type === 'xtream' || s.type === 'm3u' || s.type === 'torbox').forEach(source => {
                 select.innerHTML += `<option value="${source.id}">${source.name} (${source.type})</option>`;
             });
         } catch (err) {
@@ -890,8 +913,8 @@ class SourceManager {
         try {
             const source = await API.sources.getById(sourceId);
 
-            if (source.type !== 'xtream') {
-                this.contentTree.innerHTML = '<p class="hint">Movie categories are only available for Xtream sources</p>';
+            if (source.type !== 'xtream' && source.type !== 'torbox') {
+                this.contentTree.innerHTML = '<p class="hint">Movie categories are only available for Xtream or Torbox sources</p>';
                 return;
             }
 
@@ -947,8 +970,8 @@ class SourceManager {
         try {
             const source = await API.sources.getById(sourceId);
 
-            if (source.type !== 'xtream') {
-                this.contentTree.innerHTML = '<p class="hint">Series categories are only available for Xtream sources</p>';
+            if (source.type !== 'xtream' && source.type !== 'torbox') {
+                this.contentTree.innerHTML = '<p class="hint">Series categories are only available for Xtream or Torbox sources</p>';
                 return;
             }
 

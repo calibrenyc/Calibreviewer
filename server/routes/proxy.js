@@ -12,6 +12,7 @@ const https = require('https');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const { Readable } = require('stream');
+const torboxApi = require('../services/torboxApi');
 
 // Default cache max age in hours
 const DEFAULT_MAX_AGE_HOURS = 24;
@@ -191,6 +192,53 @@ router.get('/xtream/:sourceId/series_info', async (req, res) => {
         const seriesId = req.query.series_id;
         if (!seriesId) return res.status(400).send('series_id required');
 
+        if (source.type === 'torbox') {
+            const sourceId = parseInt(req.params.sourceId);
+            const db = getDb();
+            const row = db.prepare(
+                'SELECT data, name FROM playlist_items WHERE source_id = ? AND type = ? AND item_id = ? LIMIT 1'
+            ).get(sourceId, 'series', String(seriesId));
+
+            if (!row) {
+                return res.json({ info: { name: 'Series' }, episodes: {} });
+            }
+
+            const data = JSON.parse(row.data || '{}');
+            const torbox = data?.torbox || {};
+            const files = Array.isArray(torbox.files) ? torbox.files : [];
+            const videoFiles = files.filter(file => /\.(mkv|mp4|avi|mov|wmv|m4v|ts|m2ts)$/i.test(String(file?.name || file?.filename || file?.path || '')));
+
+            const episodes = {};
+            let episodeCounter = 1;
+            for (const file of videoFiles) {
+                const fileName = String(file?.name || file?.filename || file?.path || `Episode ${episodeCounter}`);
+                const seasonMatch = fileName.match(/S(\d{1,2})E(\d{1,2})/i);
+                const seasonNum = seasonMatch ? String(parseInt(seasonMatch[1], 10)) : '1';
+                const episodeNum = seasonMatch ? parseInt(seasonMatch[2], 10) : episodeCounter;
+                const fileId = file?.id || file?.file_id || episodeCounter;
+                const ext = (fileName.split('.').pop() || 'mkv').toLowerCase();
+
+                if (!episodes[seasonNum]) episodes[seasonNum] = [];
+                episodes[seasonNum].push({
+                    id: `${seriesId}:${fileId}`,
+                    episode_num: episodeNum,
+                    title: fileName.replace(/\.[^.]+$/, ''),
+                    duration: '',
+                    container_extension: ext
+                });
+                episodeCounter += 1;
+            }
+
+            Object.keys(episodes).forEach(season => {
+                episodes[season].sort((a, b) => a.episode_num - b.episode_num);
+            });
+
+            return res.json({
+                info: { name: row.name || data?.name || 'Series' },
+                episodes
+            });
+        }
+
         const cacheKey = `series_info_${seriesId}`;
         const cached = cache.get('xtream', source.id, cacheKey, 3600000);
         if (cached) return res.json(cached);
@@ -231,13 +279,54 @@ router.get('/xtream/:sourceId/vod_info', async (req, res) => {
 router.get('/xtream/:sourceId/stream/:streamId/:type', async (req, res) => {
     try {
         const source = await sources.getById(req.params.sourceId);
-        if (!source || source.type !== 'xtream') {
-            return res.status(404).json({ error: 'Xtream source not found' });
+        if (!source || !['xtream', 'torbox'].includes(source.type)) {
+            return res.status(404).json({ error: 'Source not found' });
         }
 
         const streamId = req.params.streamId;
         const type = req.params.type || 'live';
         const container = req.query.container || 'm3u8';
+
+        if (source.type === 'torbox') {
+            const sourceId = parseInt(req.params.sourceId);
+            const db = getDb();
+
+            // Stream ID format for torbox:
+            // - movie: "<backendType>:<itemId>"
+            // - series episode: "<backendType>:<itemId>:<fileId>"
+            const parts = String(streamId).split(':');
+            if (parts.length < 2) {
+                return res.status(400).json({ error: 'Invalid Torbox stream ID format' });
+            }
+
+            const backendType = parts[0];
+            const itemId = parseInt(parts[1], 10);
+            let fileId = parts.length >= 3 ? parseInt(parts[2], 10) : 0;
+
+            if (!itemId || Number.isNaN(itemId)) {
+                return res.status(400).json({ error: 'Invalid Torbox item ID' });
+            }
+
+            // If no fileId was provided, use primary file from stored item metadata.
+            if (!fileId) {
+                const baseItemId = `${backendType}:${itemId}`;
+                const row = db.prepare(
+                    'SELECT data FROM playlist_items WHERE source_id = ? AND item_id = ? LIMIT 1'
+                ).get(sourceId, baseItemId);
+                if (row) {
+                    try {
+                        const parsed = JSON.parse(row.data || '{}');
+                        fileId = parsed?.torbox?.primaryFileId || 0;
+                    } catch {
+                        fileId = 0;
+                    }
+                }
+            }
+
+            const api = torboxApi.createFromSource(source);
+            const url = await api.resolveStreamUrl(itemId, backendType, fileId || 0);
+            return res.json({ url });
+        }
 
         // Construct the Xtream stream URL
         // Format: http://server:port/live/username/password/streamId.container (for live)
