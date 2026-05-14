@@ -770,7 +770,18 @@ class App {
 
         this.pageMenuToggle.addEventListener('click', (event) => {
             event.preventDefault();
+            event.stopPropagation();
             this.togglePageMenu();
+        });
+
+        // Delegated link handling keeps sidebar navigation reliable even if
+        // individual listeners are missed during re-renders.
+        this.pageMenu.addEventListener('click', (event) => {
+            const link = event.target.closest('.nav-link[data-page]');
+            if (!link) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.navigateTo(link.dataset.page);
         });
 
         this.pageMenuOverlay.addEventListener('click', () => this.closePageMenu());

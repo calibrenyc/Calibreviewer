@@ -134,6 +134,28 @@ function sanitizeUpdateFileName(value) {
     return path.basename(value).replace(/[<>:"/\\|?*]+/g, '_').trim();
 }
 
+function buildRemoteUpdateSignature(updateInfo) {
+    const latestFile = String(updateInfo?.latestFile || '').trim();
+    const downloadUrl = String(updateInfo?.downloadUrl || '').trim();
+    const assetId = String(updateInfo?.assetId || '').trim();
+    const assetSize = String(updateInfo?.assetSize || '').trim();
+    const assetUpdatedAt = String(updateInfo?.assetUpdatedAt || '').trim();
+
+    if (!latestFile && !downloadUrl) return '';
+    return ['remote', latestFile, downloadUrl, assetId, assetSize, assetUpdatedAt].join('|');
+}
+
+function buildLocalFileSignature(filePath) {
+    if (!filePath || !fs.existsSync(filePath)) return '';
+
+    try {
+        const stat = fs.statSync(filePath);
+        return ['local', path.basename(filePath), String(stat.size || 0), String(Math.round(stat.mtimeMs || 0))].join('|');
+    } catch {
+        return '';
+    }
+}
+
 function getUpdateDownloadPath(updateInfo) {
     const directName = sanitizeUpdateFileName(updateInfo?.latestFile || '');
     if (directName && (isWindowsInstallerAsset(directName) || isPortableExecutable(directName) || isArchivePackage(directName))) {
@@ -456,6 +478,21 @@ async function promptAndInstallUpdate(updateInfo) {
 
     await launchUpdateInstaller(installerPath, updateMode);
 
+    const installedFileSignature = buildLocalFileSignature(installerPath);
+    const installedSourceSignature = updateInfo?.checkedFolder
+        ? installedFileSignature
+        : (buildRemoteUpdateSignature(updateInfo) || installedFileSignature);
+
+    if (installedFileSignature || installedSourceSignature) {
+        writeUpdateConfig({
+            lastInstalledFileSignature: installedFileSignature || null,
+            lastInstalledSourceSignature: installedSourceSignature || null,
+            lastInstalledAt: new Date().toISOString(),
+            lastInstalledVersion: latestVersion || null,
+            lastInstalledFileName: latestFile || path.basename(installerPath)
+        });
+    }
+
     return {
         ok: true,
         started: true,
@@ -612,6 +649,9 @@ async function fetchGithubUpdateInfo(repo) {
             latestTag: payload.tag_name || `v${latestVersion}`,
             latestFile: windowsAsset?.name || null,
             downloadUrl: windowsAsset?.browser_download_url || null,
+            assetId: windowsAsset?.id || null,
+            assetSize: windowsAsset?.size || null,
+            assetUpdatedAt: windowsAsset?.updated_at || null,
             releaseUrl: payload.html_url || null
         };
     };
@@ -714,29 +754,46 @@ function findLatestLocalUpdate(folderPath) {
 
     const files = fs.readdirSync(folderPath, { withFileTypes: true })
         .filter(entry => entry.isFile())
-        .map(entry => entry.name)
-        .filter(name => /\.(exe|msi|zip)$/i.test(name));
+        .map(entry => {
+            const fullPath = path.join(folderPath, entry.name);
+            let modifiedMs = 0;
+            try {
+                modifiedMs = fs.statSync(fullPath).mtimeMs || 0;
+            } catch {
+                modifiedMs = 0;
+            }
+            return { name: entry.name, modifiedMs };
+        })
+        .filter(entry => /\.(exe|msi|zip)$/i.test(entry.name));
 
     const candidates = files
-        .map(name => {
+        .map(entry => {
+            const name = entry.name;
             const version = extractVersionFromName(name);
             const parsed = parseVersion(version);
-            if (!parsed) return null;
             return {
                 name,
                 version,
                 parsed,
-                isArchive: isArchivePackage(name)
+                isArchive: isArchivePackage(name),
+                modifiedMs: entry.modifiedMs
             };
         })
         .filter(Boolean)
         .sort((a, b) => {
-            const versionDiff = compareVersions(b.parsed, a.parsed);
-            if (versionDiff !== 0) return versionDiff;
+            if (a.parsed && b.parsed) {
+                const versionDiff = compareVersions(b.parsed, a.parsed);
+                if (versionDiff !== 0) return versionDiff;
+            }
+
+            if (a.parsed && !b.parsed) return -1;
+            if (!a.parsed && b.parsed) return 1;
 
             // For same-version candidates, prefer ZIP package updates.
             if (a.isArchive !== b.isArchive) return a.isArchive ? -1 : 1;
-            return 0;
+
+            // Fall back to most recently modified file.
+            return (b.modifiedMs || 0) - (a.modifiedMs || 0);
         });
 
     if (!candidates.length) {
@@ -746,8 +803,9 @@ function findLatestLocalUpdate(folderPath) {
     return {
         found: true,
         candidates: candidates.length,
-        latestVersion: candidates[0].version,
-        latestFile: candidates[0].name
+        latestVersion: candidates[0].version || null,
+        latestFile: candidates[0].name,
+        latestModifiedMs: candidates[0].modifiedMs || 0
     };
 }
 
@@ -809,6 +867,7 @@ function registerDesktopIpc() {
         const currentParsed = parseVersion(currentVersion);
         const checkedFolder = getLocalUpdateFolder();
         const latest = findLatestLocalUpdate(checkedFolder);
+        const config = readUpdateConfig();
 
         if (!latest.found) {
             return {
@@ -821,7 +880,24 @@ function registerDesktopIpc() {
         }
 
         const latestParsed = parseVersion(latest.latestVersion);
-        const updateAvailable = !!(latestParsed && currentParsed && compareVersions(latestParsed, currentParsed) > 0);
+        const versionDiff = (latestParsed && currentParsed) ? compareVersions(latestParsed, currentParsed) : null;
+        const hasInstallableAsset = /\.(exe|msi|zip)$/i.test(latest.latestFile || '');
+        const candidatePath = latest.latestFile ? path.join(checkedFolder, latest.latestFile) : '';
+        const candidateSignature = buildLocalFileSignature(candidatePath);
+        const installedSignature = String(config?.lastInstalledFileSignature || '');
+        const signatureChanged = Boolean(candidateSignature && installedSignature && candidateSignature !== installedSignature);
+        const firstPackageSeen = Boolean(candidateSignature && !installedSignature);
+        const sameVersionPackage = versionDiff === 0 && hasInstallableAsset;
+        const unknownVersionPackage = !latestParsed && hasInstallableAsset;
+        const updateAvailable = versionDiff === null
+            ? (unknownVersionPackage || signatureChanged || firstPackageSeen)
+            : (versionDiff > 0 || sameVersionPackage || signatureChanged || firstPackageSeen);
+
+        const message = updateAvailable
+            ? (versionDiff > 0
+                ? `Update available: v${latest.latestVersion} (${latest.latestFile})`
+                : `Updated package file detected: ${latest.latestFile}. Install this build now?`)
+            : `You are up to date. Latest local file is ${latest.latestVersion ? `v${latest.latestVersion}` : latest.latestFile}.`;
 
         return {
             checkedFolder,
@@ -830,9 +906,10 @@ function registerDesktopIpc() {
             latestFile: latest.latestFile,
             filesScanned: latest.candidates,
             updateAvailable,
-            message: updateAvailable
-                ? `Update available: v${latest.latestVersion} (${latest.latestFile})`
-                : `You are up to date. Latest local file is v${latest.latestVersion}.`
+            sameVersionPackage,
+            unknownVersionPackage,
+            signatureChanged,
+            message
         };
     });
 
@@ -840,11 +917,12 @@ function registerDesktopIpc() {
         const repo = getGithubRepo();
         const currentVersion = app.getVersion();
         const currentParsed = parseVersion(currentVersion);
+        const config = readUpdateConfig();
 
         try {
             const remote = await fetchGithubUpdateInfo(repo);
             const latestParsed = parseVersion(remote.latestVersion);
-            const updateAvailable = !!(latestParsed && currentParsed && compareVersions(latestParsed, currentParsed) > 0);
+            const versionDiff = (latestParsed && currentParsed) ? compareVersions(latestParsed, currentParsed) : null;
             const hasInstallableAsset =
                 isWindowsInstallerAsset(remote.latestFile || '') ||
                 isPortableExecutable(remote.latestFile || '') ||
@@ -852,10 +930,20 @@ function registerDesktopIpc() {
                 isWindowsInstallerAsset(remote.downloadUrl || '') ||
                 isPortableExecutable(remote.downloadUrl || '') ||
                 isArchivePackage(remote.downloadUrl || '');
+            const candidateSignature = buildRemoteUpdateSignature(remote);
+            const installedSignature = String(config?.lastInstalledSourceSignature || '');
+            const signatureChanged = Boolean(candidateSignature && installedSignature && candidateSignature !== installedSignature);
+            const firstPackageSeen = Boolean(candidateSignature && !installedSignature);
+            const sameVersionPackage = versionDiff === 0 && hasInstallableAsset;
+            const updateAvailable = ((versionDiff !== null && versionDiff > 0) || sameVersionPackage || signatureChanged || firstPackageSeen) && hasInstallableAsset;
 
             let message = updateAvailable
                 ? `Update available: v${remote.latestVersion}${remote.latestFile ? ` (${remote.latestFile})` : ''}`
                 : `You are up to date (v${currentVersion}). Latest on GitHub is v${remote.latestVersion}.`;
+
+            if (sameVersionPackage || signatureChanged || firstPackageSeen) {
+                message = `Updated build package found: ${remote.latestFile || 'update package'}. Install this build now?`;
+            }
 
             if (updateAvailable && !hasInstallableAsset) {
                 message = `Update v${remote.latestVersion} was found, but no Windows update asset (.zip/.exe/.msi) is attached to that release.`;
@@ -871,6 +959,8 @@ function registerDesktopIpc() {
                 downloadUrl: remote.downloadUrl,
                 releaseUrl: remote.releaseUrl,
                 updateAvailable,
+                sameVersionPackage,
+                signatureChanged,
                 message
             };
         } catch (error) {
