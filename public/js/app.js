@@ -5,6 +5,7 @@
 const THEME_COLORS_STORAGE_KEY = 'themeColors';
 const UI_MODE_STORAGE_KEY = 'uiMode';
 const KEYBOARD_ONLY_MODE_STORAGE_KEY = 'keyboardOnlyMode';
+const SIDEBAR_GLASS_STORAGE_KEY = 'sidebarGlass';
 const SAVED_LOGINS_KEY = 'savedLogins';
 const KNOWN_USERS_KEY = 'knownLoginUsers';
 const REMEMBER_ME_KEY = 'rememberLoginEnabled';
@@ -144,8 +145,16 @@ function syncRememberedAuthProfile(user, token) {
 window.DEFAULT_THEME_COLORS = DEFAULT_THEME_COLORS;
 window.THEME_COLORS_STORAGE_KEY = THEME_COLORS_STORAGE_KEY;
 window.applyThemeColors = applyThemeColors;
+function applySidebarGlass(enabled = true) {
+    const normalized = enabled === true || enabled === 'true';
+    document.body.classList.toggle('sidebar-glass-off', !normalized);
+    localStorage.setItem(SIDEBAR_GLASS_STORAGE_KEY, normalized ? 'true' : 'false');
+    return normalized;
+}
+
 window.applyInterfaceMode = applyInterfaceMode;
 window.applyKeyboardOnlyMode = applyKeyboardOnlyMode;
+window.applySidebarGlass = applySidebarGlass;
 
 function loadThemeFromLocalStorage() {
     try {
@@ -982,6 +991,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadThemeFromLocalStorage();
     applyInterfaceMode(localStorage.getItem(UI_MODE_STORAGE_KEY) || 'desktop');
     applyKeyboardOnlyMode(localStorage.getItem(KEYBOARD_ONLY_MODE_STORAGE_KEY) || 'false');
+    const savedGlass = localStorage.getItem(SIDEBAR_GLASS_STORAGE_KEY);
+    applySidebarGlass(savedGlass === null ? true : savedGlass);
     installGlobalActivityTracker();
     window.app = new App();
 

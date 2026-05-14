@@ -326,6 +326,7 @@ class SettingsPage {
         const interfaceModeSelect = document.getElementById('setting-interface-mode');
         const keyboardOnlyModeToggle = document.getElementById('setting-keyboard-only-mode');
         const arrowKeysToggle = document.getElementById('setting-arrow-keys');
+        const sidebarGlassToggle = document.getElementById('setting-sidebar-glass');
         const overlayDurationInput = document.getElementById('setting-overlay-duration');
         const defaultVolumeSlider = document.getElementById('setting-default-volume');
         const volumeValueDisplay = document.getElementById('volume-value');
@@ -360,6 +361,14 @@ class SettingsPage {
 
         syncKeyboardOnlyModeToggle();
         window.addEventListener('keyboard-only-mode-changed', syncKeyboardOnlyModeToggle);
+
+        if (sidebarGlassToggle) {
+            const saved = localStorage.getItem('sidebarGlass');
+            sidebarGlassToggle.checked = saved === null ? true : saved === 'true';
+            sidebarGlassToggle.addEventListener('change', () => {
+                window.applySidebarGlass?.(sidebarGlassToggle.checked);
+            });
+        }
 
         interfaceModeSelect?.addEventListener('change', async () => {
             const nextMode = interfaceModeSelect.value === 'tv' ? 'tv' : 'desktop';

@@ -5501,14 +5501,14 @@ body {
 
 .navbar-menu {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: min(360px, 86vw);
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: min(300px, 82vw);
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: calc(max(var(--safe-area-inset-top), 16px) + 16px) 14px max(var(--safe-area-inset-bottom), 16px);
+  padding: 20px 14px 16px;
   background:
     linear-gradient(90deg,
       var(--sidebar-bg-left) 0%,
@@ -5522,10 +5522,11 @@ body {
       var(--sidebar-mosaic-b) 0 1px,
       transparent 1px 12px),
     linear-gradient(180deg, var(--sidebar-bg-top), var(--sidebar-bg-bottom));
-  backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(8px) saturate(110%);
+  border-radius: 18px;
   border-right: none;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
-  transform: translateX(-106%);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.38);
+  transform: translateX(calc(-100% - 20px));
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -5549,6 +5550,12 @@ body {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+
+body.sidebar-glass-off .navbar-menu {
+  backdrop-filter: none !important;
+  background: rgba(10, 12, 20, 0.92) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.52);
 }
 
 .nav-link {
