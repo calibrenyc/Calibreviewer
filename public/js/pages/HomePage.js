@@ -15,11 +15,15 @@ class HomePage {
 
     async show() {
         this.renderLayout();
-        await this.loadDashboardData();
+        await Promise.all([
+            this.renderHeroBanner(),
+            this.loadDashboardData()
+        ]);
     }
 
     hide() {
         // Cleanup if needed
+        this._destroyHero();
         if (this.container) {
             this.container.innerHTML = '';
         }
@@ -30,6 +34,15 @@ class HomePage {
         if (!pageHome) return;
 
         pageHome.innerHTML = `
+            <div class="hero-banner" id="hero-banner">
+                <button class="hero-arrow hero-arrow-prev" aria-label="Previous">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                </button>
+                <button class="hero-arrow hero-arrow-next" aria-label="Next">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                </button>
+                <div class="hero-dots" id="hero-dots"></div>
+            </div>
             <div class="dashboard-content" id="home-content">
                 <section class="dashboard-section" id="favorite-channels-section">
                     <div class="section-header">
@@ -143,6 +156,143 @@ class HomePage {
             }
         });
     }
+
+    _destroyHero() {
+        if (this._heroTimer) { clearInterval(this._heroTimer); this._heroTimer = null; }
+        this._heroItems = null;
+        this._heroIndex = 0;
+    }
+
+    async renderHeroBanner() {
+        this._destroyHero();
+        const banner = document.getElementById('hero-banner');
+        if (!banner) return;
+
+        let items = [];
+        try {
+            const [movies, series] = await Promise.all([
+                window.API.request('GET', '/channels/recent?type=movie&limit=6').catch(() => []),
+                window.API.request('GET', '/channels/recent?type=series&limit=6').catch(() => [])
+            ]);
+            // Interleave: movie, series, movie, series...
+            const m = Array.isArray(movies) ? movies : [];
+            const s = Array.isArray(series) ? series : [];
+            const maxLen = Math.max(m.length, s.length);
+            for (let i = 0; i < maxLen; i++) {
+                if (m[i]) items.push({ ...m[i], _heroType: 'movie' });
+                if (s[i]) items.push({ ...s[i], _heroType: 'series' });
+            }
+            items = items.slice(0, 10);
+        } catch (e) {
+            console.warn('[Hero] Failed to load hero items', e);
+        }
+
+        if (!items.length) {
+            banner.style.display = 'none';
+            return;
+        }
+
+        this._heroItems = items;
+        this._heroIndex = 0;
+
+        // Build slides
+        items.forEach((item, idx) => {
+            const data = item.data || {};
+            const poster = item.stream_icon || data.poster || data.cover || '';
+            const bgUrl = poster.startsWith('http') ? `/api/proxy/image?url=${encodeURIComponent(poster)}` : poster;
+            const title = item.name || data.title || 'Unknown';
+            const plot = data.plot || data.description || '';
+            const year = data.releaseDate || data.year || '';
+            const rating = data.rating || data.rating_5based ? `★ ${parseFloat(data.rating_5based || data.rating || 0).toFixed(1)}` : '';
+            const typeLabel = item._heroType === 'movie' ? 'MOVIE' : 'SERIES';
+
+            const slide = document.createElement('div');
+            slide.className = 'hero-slide' + (idx === 0 ? ' active' : '');
+            slide.dataset.idx = idx;
+            slide.innerHTML = `
+                <div class="hero-slide-bg" style="background-image: url('${bgUrl}')"></div>
+                <div class="hero-content">
+                    <div class="hero-badge">${typeLabel}</div>
+                    <div class="hero-title">${title}</div>
+                    ${(year || rating) ? `<div class="hero-meta">${year ? `<span>${year}</span>` : ''}${rating ? `<span>${rating}</span>` : ''}</div>` : ''}
+                    ${plot ? `<div class="hero-plot">${plot}</div>` : ''}
+                    <div class="hero-actions">
+                        <button class="hero-btn hero-btn-play" data-idx="${idx}">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            Play
+                        </button>
+                        <button class="hero-btn hero-btn-info" data-idx="${idx}">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+                            More Info
+                        </button>
+                    </div>
+                </div>
+            `;
+            banner.insertBefore(slide, banner.querySelector('.hero-arrow-prev'));
+        });
+
+        // Build dots
+        const dotsEl = document.getElementById('hero-dots');
+        if (dotsEl) {
+            dotsEl.innerHTML = items.map((_, idx) =>
+                `<button class="hero-dot${idx === 0 ? ' active' : ''}" data-idx="${idx}" aria-label="Slide ${idx + 1}"></button>`
+            ).join('');
+            dotsEl.querySelectorAll('.hero-dot').forEach(dot => {
+                dot.addEventListener('click', () => this._heroGoTo(parseInt(dot.dataset.idx)));
+            });
+        }
+
+        // Arrow controls
+        banner.querySelector('.hero-arrow-prev')?.addEventListener('click', () => {
+            this._heroGoTo((this._heroIndex - 1 + this._heroItems.length) % this._heroItems.length);
+        });
+        banner.querySelector('.hero-arrow-next')?.addEventListener('click', () => {
+            this._heroGoTo((this._heroIndex + 1) % this._heroItems.length);
+        });
+
+        // Play / info buttons
+        banner.addEventListener('click', e => {
+            const playBtn = e.target.closest('.hero-btn-play');
+            const infoBtn = e.target.closest('.hero-btn-info');
+            if (!playBtn && !infoBtn) return;
+            const idx = parseInt((playBtn || infoBtn).dataset.idx);
+            const item = this._heroItems[idx];
+            if (!item) return;
+            if (playBtn) { this.playItem(item); }
+            else { this._heroShowInfo(item); }
+        });
+
+        // Auto-advance
+        this._heroTimer = setInterval(() => {
+            if (document.hidden) return;
+            this._heroGoTo((this._heroIndex + 1) % this._heroItems.length);
+        }, 7000);
+    }
+
+    _heroGoTo(idx) {
+        if (!this._heroItems) return;
+        const banner = document.getElementById('hero-banner');
+        if (!banner) return;
+
+        banner.querySelectorAll('.hero-slide').forEach(s => s.classList.remove('active'));
+        banner.querySelectorAll('.hero-dot').forEach(d => d.classList.toggle('active', parseInt(d.dataset.idx) === idx));
+
+        const target = banner.querySelector(`.hero-slide[data-idx="${idx}"]`);
+        if (target) target.classList.add('active');
+        this._heroIndex = idx;
+    }
+
+    _heroShowInfo(item) {
+        const type = item._heroType;
+        if (type === 'series') {
+            this.navigateToSeries(item);
+        } else {
+            // For movies just play — a detail view isn't wired yet
+            this.playItem(item);
+        }
+    }
+
+
 
 
     async loadDashboardData() {
