@@ -1,6 +1,7 @@
 const { app, BrowserWindow, shell, ipcMain, dialog, Menu, powerSaveBlocker } = require('electron');
 const { Readable } = require('stream');
 const { pipeline } = require('stream/promises');
+const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
@@ -151,56 +152,141 @@ async function downloadUpdateAsset(downloadUrl, targetPath) {
     return targetPath;
 }
 
+function escapeForBatch(value) {
+    return String(value || '').replace(/"/g, '""');
+}
+
+async function launchDetachedUpdaterScript({ mode, appPath, installerPath, backupPath }) {
+    const updateDir = getLocalUpdateFolder();
+    await fs.promises.mkdir(updateDir, { recursive: true });
+
+    const scriptPath = path.join(updateDir, `run-update-${Date.now()}.cmd`);
+    const pid = process.pid;
+    const safeAppPath = escapeForBatch(appPath);
+    const safeInstallerPath = escapeForBatch(installerPath);
+    const safeBackupPath = escapeForBatch(backupPath || `${appPath}.backup`);
+    const safeScriptPath = escapeForBatch(scriptPath);
+
+    const lines = [
+        '@echo off',
+        'setlocal',
+        'title CalibreViewer Updater',
+        `set "APP_PID=${pid}"`,
+        `set "APP_EXE=${safeAppPath}"`,
+        `set "UPDATE_FILE=${safeInstallerPath}"`,
+        `set "BACKUP_EXE=${safeBackupPath}"`,
+        'echo ========================================',
+        'echo   CalibreViewer Updater',
+        'echo ========================================',
+        'echo Waiting for app to close...',
+        '',
+        'for /L %%I in (1,1,90) do (',
+        '  tasklist /FI "PID eq %APP_PID%" | find "%APP_PID%" >nul',
+        '  if errorlevel 1 goto after_wait',
+        '  timeout /t 1 /nobreak >nul',
+        ')',
+        '',
+        ':after_wait'
+    ];
+
+    if (mode === 'portable') {
+        lines.push(
+            'echo Applying portable update...',
+            'if not exist "%UPDATE_FILE%" (',
+            '  echo ERROR: Update file not found: %UPDATE_FILE%',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'if exist "%BACKUP_EXE%" del /F /Q "%BACKUP_EXE%" >nul 2>&1',
+            'if exist "%APP_EXE%" move /Y "%APP_EXE%" "%BACKUP_EXE%" >nul',
+            'copy /Y "%UPDATE_FILE%" "%APP_EXE%" >nul',
+            'if errorlevel 1 (',
+            '  echo ERROR: Failed to copy updated executable.',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'echo Update applied successfully.',
+            'echo Restarting CalibreViewer...',
+            'start "" "%APP_EXE%"',
+            'echo Done.',
+            'timeout /t 2 /nobreak >nul'
+        );
+    } else {
+        lines.push(
+            'echo Launching installer...',
+            'if not exist "%UPDATE_FILE%" (',
+            '  echo ERROR: Installer not found: %UPDATE_FILE%',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'start "" "%UPDATE_FILE%"',
+            'echo Installer started. Follow the installer steps to complete update.',
+            'timeout /t 2 /nobreak >nul'
+        );
+    }
+
+    lines.push('endlocal');
+
+    await fs.promises.writeFile(scriptPath, `${lines.join('\r\n')}\r\n`, 'utf8');
+
+    spawn('cmd.exe', ['/c', 'start', '"CalibreViewer Updater"', 'cmd.exe', '/k', `"${safeScriptPath}"`], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: false
+    }).unref();
+}
+
 async function launchUpdateInstaller(installerPath, isPortableUpdate = false) {
     if (isPortableUpdate) {
-        // For portable exe, we need to:
-        // 1. Copy new exe to a temp location
-        // 2. Close current app gracefully
-        // 3. Replace current exe with new one
-        // 4. Restart app
         const appPath = app.getPath('exe');
         const backupPath = `${appPath}.backup`;
-        const tempPath = `${appPath}.tmp`;
-        
+
         try {
-            // Copy new exe to temp location
-            await fs.promises.copyFile(installerPath, tempPath);
-            
-            // Signal app to quit (without preventing it)
-            quitting = true;
-            
-            // Close all windows
-            BrowserWindow.getAllWindows().forEach(win => win.close());
-            
-            // Schedule the replacement and restart AFTER app has fully closed
-            setImmediate(() => {
-                app.quit();
-                
-                // These will run after app exits via a batch/ps script we'd need
-                // For now, we'll use a simpler approach: restart and let user know
-                // Actually, we'll use electron-squirrel-startup patterns
+            await launchDetachedUpdaterScript({
+                mode: 'portable',
+                appPath,
+                installerPath,
+                backupPath
             });
-            
+
+            quitting = true;
+            BrowserWindow.getAllWindows().forEach(win => win.close());
+            setImmediate(() => app.quit());
+
             return {
                 ok: true,
                 started: true,
-                message: `Portable update downloaded. CalibreViewer will restart to apply the update.`
+                message: 'Starting updater terminal. CalibreViewer will close and relaunch after update.'
             };
         } catch (error) {
             quitting = false;
             throw error;
         }
     } else {
-        // For installer exe, just launch it
-        const openError = await shell.openPath(installerPath);
-        if (openError) {
-            throw new Error(openError);
-        }
+        try {
+            const appPath = app.getPath('exe');
+            await launchDetachedUpdaterScript({
+                mode: 'installer',
+                appPath,
+                installerPath,
+                backupPath: `${appPath}.backup`
+            });
 
-        setImmediate(() => {
             quitting = true;
-            app.quit();
-        });
+            BrowserWindow.getAllWindows().forEach(win => win.close());
+            setImmediate(() => {
+                app.quit();
+            });
+
+            return {
+                ok: true,
+                started: true,
+                message: 'Starting updater terminal. CalibreViewer will close and installer will launch.'
+            };
+        } catch (error) {
+            quitting = false;
+            throw error;
+        }
     }
 }
 
