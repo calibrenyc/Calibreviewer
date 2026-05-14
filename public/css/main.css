@@ -34,12 +34,15 @@
   --color-border-light: #3f3f46;
 
   /* Sidebar theme tokens (easy to customize in one place) */
-  --sidebar-bg-top: rgba(10, 12, 18, 0.97);
-  --sidebar-bg-bottom: rgba(8, 9, 14, 0.96);
-  --sidebar-blend-glow: rgba(10, 20, 36, 0.2);
+  --sidebar-bg-top: rgba(10, 12, 18, 0.75);
+  --sidebar-bg-bottom: rgba(8, 9, 14, 0.66);
+  --sidebar-bg-left: rgba(8, 12, 20, 0.74);
+  --sidebar-bg-mid: rgba(8, 12, 20, 0.34);
+  --sidebar-bg-right: rgba(8, 12, 20, 0.02);
+  --sidebar-blend-glow: rgba(10, 20, 36, 0.1);
   --sidebar-border: rgba(255, 255, 255, 0);
-  --sidebar-mosaic-a: rgba(130, 170, 220, 0.045);
-  --sidebar-mosaic-b: rgba(35, 62, 98, 0.04);
+  --sidebar-mosaic-a: rgba(130, 170, 220, 0.018);
+  --sidebar-mosaic-b: rgba(35, 62, 98, 0.014);
   --sidebar-active: #0a84ff;
   --sidebar-active-border: rgba(10, 132, 255, 0.45);
   --sidebar-active-bg-start: rgba(10, 132, 255, 0.22);
@@ -5507,16 +5510,21 @@ body {
   gap: 6px;
   padding: calc(max(var(--safe-area-inset-top), 16px) + 16px) 14px max(var(--safe-area-inset-bottom), 16px);
   background:
+    linear-gradient(90deg,
+      var(--sidebar-bg-left) 0%,
+      var(--sidebar-bg-mid) 62%,
+      var(--sidebar-bg-right) 92%,
+      rgba(8, 12, 20, 0) 100%),
     repeating-linear-gradient(45deg,
       var(--sidebar-mosaic-a) 0 1px,
-      transparent 1px 13px),
+      transparent 1px 14px),
     repeating-linear-gradient(-45deg,
       var(--sidebar-mosaic-b) 0 1px,
-      transparent 1px 11px),
+      transparent 1px 12px),
     linear-gradient(180deg, var(--sidebar-bg-top), var(--sidebar-bg-bottom));
-  backdrop-filter: blur(22px) saturate(130%);
+  backdrop-filter: blur(18px) saturate(120%);
   border-right: none;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.24);
   transform: translateX(-106%);
   opacity: 0;
   visibility: hidden;
@@ -5529,8 +5537,8 @@ body {
   content: '';
   position: absolute;
   top: 0;
-  right: -84px;
-  width: 84px;
+  right: -72px;
+  width: 72px;
   height: 100%;
   background: linear-gradient(90deg, var(--sidebar-blend-glow), rgba(10, 20, 36, 0));
   pointer-events: none;
