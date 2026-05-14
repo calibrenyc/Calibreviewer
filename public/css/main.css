@@ -4943,6 +4943,9 @@ kbd {
 #page-home {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+#page-home.page.active {
   display: flex;
   flex-direction: column;
 }
