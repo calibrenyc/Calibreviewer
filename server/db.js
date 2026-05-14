@@ -86,7 +86,9 @@ function getDefaultSettings() {
     upscaleMethod: 'hardware',    // hardware | software
     upscaleTarget: '1080p',       // 1080p | 4k | 720p
     // Theme colors
-    themeColors: getDefaultThemeColors()
+    themeColors: getDefaultThemeColors(),
+    // External API keys
+    tmdbApiKey: ''
   };
 }
 

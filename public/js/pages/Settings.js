@@ -370,6 +370,49 @@ class SettingsPage {
             });
         }
 
+        // TMDB API Key
+        const tmdbKeyInput = document.getElementById('setting-tmdb-key');
+        const saveTmdbBtn = document.getElementById('save-tmdb-key');
+        const clearCacheBtn = document.getElementById('clear-artwork-cache');
+        const tmdbStatus = document.getElementById('tmdb-key-status');
+
+        if (tmdbKeyInput && saveTmdbBtn) {
+            // Load current saved key (masked)
+            if (this.app.player?.settings?.tmdbApiKey) {
+                tmdbKeyInput.placeholder = '••••••••••••••••••••••••••••••••';
+            }
+            saveTmdbBtn.addEventListener('click', async () => {
+                const key = tmdbKeyInput.value.trim();
+                if (!key) return;
+                try {
+                    saveTmdbBtn.disabled = true;
+                    await API.settings.update({ tmdbApiKey: key });
+                    if (this.app.player?.settings) this.app.player.settings.tmdbApiKey = key;
+                    tmdbKeyInput.value = '';
+                    tmdbKeyInput.placeholder = '••••••••••••••••••••••••••••••••';
+                    if (tmdbStatus) tmdbStatus.textContent = 'API key saved. Artwork will be fetched on next home screen load.';
+                } catch (err) {
+                    if (tmdbStatus) tmdbStatus.textContent = 'Failed to save key: ' + (err.message || err);
+                } finally {
+                    saveTmdbBtn.disabled = false;
+                }
+            });
+        }
+
+        if (clearCacheBtn) {
+            clearCacheBtn.addEventListener('click', async () => {
+                try {
+                    clearCacheBtn.disabled = true;
+                    await API.request('DELETE', '/artwork/cache');
+                    if (tmdbStatus) tmdbStatus.textContent = 'Artwork cache cleared. New images will be fetched on next home screen load.';
+                } catch (err) {
+                    if (tmdbStatus) tmdbStatus.textContent = 'Failed to clear cache: ' + (err.message || err);
+                } finally {
+                    clearCacheBtn.disabled = false;
+                }
+            });
+        }
+
         interfaceModeSelect?.addEventListener('change', async () => {
             const nextMode = interfaceModeSelect.value === 'tv' ? 'tv' : 'desktop';
             window.applyInterfaceMode?.(nextMode);

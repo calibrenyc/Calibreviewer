@@ -195,11 +195,28 @@ class HomePage {
         this._heroItems = items;
         this._heroIndex = 0;
 
+        // Fetch TMDB artwork for each item in parallel (uses server-side 7-day cache)
+        const artworkResults = await Promise.all(items.map(async item => {
+            const data = item.data || {};
+            const title = item.name || data.title || '';
+            const year = data.releaseDate || data.year || '';
+            const type = item._heroType;
+            try {
+                const art = await window.API.request('GET', `/artwork/search?title=${encodeURIComponent(title)}&year=${encodeURIComponent(year)}&type=${type}`);
+                return art || {};
+            } catch {
+                return {};
+            }
+        }));
+
         // Build slides
         items.forEach((item, idx) => {
             const data = item.data || {};
-            const poster = item.stream_icon || data.poster || data.cover || '';
-            const bgUrl = poster.startsWith('http') ? `/api/proxy/image?url=${encodeURIComponent(poster)}` : poster;
+            // Prefer TMDB backdrop → TMDB poster → source poster → stream_icon
+            const art = artworkResults[idx] || {};
+            const rawFallback = item.stream_icon || data.poster || data.cover || '';
+            const fallbackUrl = rawFallback.startsWith('http') ? `/api/proxy/image?url=${encodeURIComponent(rawFallback)}` : rawFallback;
+            const bgUrl = art.backdropUrl || art.posterUrl || fallbackUrl;
             const title = item.name || data.title || 'Unknown';
             const plot = data.plot || data.description || '';
             const year = data.releaseDate || data.year || '';

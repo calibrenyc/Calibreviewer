@@ -179,6 +179,7 @@ async function startServer(options = {}) {
     app.use('/api/probe', require('./routes/probe'));
     app.use('/api/subtitle', require('./routes/subtitle'));
     app.use('/api/settings', require('./routes/settings'));
+    app.use('/api/artwork', require('./routes/artwork'));
     app.use('/api/assist', require('./routes/assist'));
     app.use('/api/history', require('./routes/history'));
 

@@ -136,6 +136,16 @@ function initSchema() {
         CREATE INDEX IF NOT EXISTS idx_history_user_item ON watch_history(user_id, item_id);
     `);
 
+    // Artwork cache (TMDB backdrop lookups)
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS artwork_cache (
+            cache_key TEXT PRIMARY KEY,
+            backdrop_url TEXT,
+            poster_url TEXT,
+            fetched_at INTEGER NOT NULL
+        );
+    `);
+
     // Migration: Add source_id column if missing (for existing databases)
     try {
         db.exec(`ALTER TABLE watch_history ADD COLUMN source_id INTEGER`);
