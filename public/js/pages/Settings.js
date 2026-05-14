@@ -167,12 +167,12 @@ class SettingsPage {
 
         const canAutoInstall = (result) => {
             if (!result?.updateAvailable) return false;
-            if (result?.checkedFolder && /\.(exe|msi)$/i.test(result.latestFile || '')) {
+            if (result?.checkedFolder && /\.(exe|msi|zip)$/i.test(result.latestFile || '')) {
                 return true;
             }
 
             const candidate = `${result?.latestFile || ''} ${result?.downloadUrl || ''}`;
-            return /\.(exe|msi)(?:$|[?#])/i.test(candidate);
+            return /\.(exe|msi|zip)(?:$|[?#])/i.test(candidate);
         };
 
         const hasUpdateAvailable = (...results) => {
@@ -303,7 +303,7 @@ class SettingsPage {
 
                 if (!canAutoInstall(result) && !canAutoInstall(localResult)) {
                     if (hasUpdateAvailable(result, localResult)) {
-                        setStatus('An update was found, but no Windows installer package (.exe/.msi) is attached to it.', true);
+                        setStatus('An update was found, but no Windows update package (.zip/.exe/.msi) is attached to it.', true);
                     } else {
                         setStatus(result?.message || localResult?.message || 'You are up to date.');
                     }

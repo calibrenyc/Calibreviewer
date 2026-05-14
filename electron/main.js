@@ -70,15 +70,44 @@ function isPortableExecutable(value) {
     return typeof value === 'string' && /\.exe(?:$|[?#])/i.test(value);
 }
 
+function isArchivePackage(value) {
+    return typeof value === 'string' && /\.zip(?:$|[?#])/i.test(value);
+}
+
 function selectPreferredWindowsAsset(assets) {
     if (!Array.isArray(assets) || assets.length === 0) return null;
 
     const installable = assets.filter(asset => {
         const name = String(asset?.name || '');
-        return /\.(exe|msi)$/i.test(name);
+        return /\.(exe|msi|zip)$/i.test(name);
     });
 
     if (!installable.length) return null;
+
+    // Prefer archive package updates because they can replace the full app set
+    // of files before relaunching, even when the executable name stays the same.
+    const zipAssets = installable.filter(asset => /\.zip$/i.test(String(asset?.name || '')));
+    if (zipAssets.length) {
+        const appNameLc = APP_NAME.toLowerCase();
+        const rankedZip = zipAssets
+            .map(asset => {
+                const name = String(asset?.name || '');
+                const lower = name.toLowerCase();
+                let score = 0;
+
+                if (lower.includes(appNameLc)) score += 30;
+                if (lower.includes('full') || lower.includes('package') || lower.includes('bundle')) score += 12;
+                if (lower.includes('x64') || lower.includes('win64')) score += 10;
+                if (lower.includes('arm64')) score -= 5;
+                if (lower.includes('debug') || lower.includes('symbols')) score -= 20;
+                if (lower.includes('assist')) score -= 10;
+
+                return { asset, score };
+            })
+            .sort((a, b) => b.score - a.score);
+
+        return rankedZip[0].asset;
+    }
 
     const appNameLc = APP_NAME.toLowerCase();
     const scored = installable.map(asset => {
@@ -87,7 +116,8 @@ function selectPreferredWindowsAsset(assets) {
         let score = 0;
 
         if (lower.includes(appNameLc)) score += 30;
-        if (lower.includes('setup') || lower.endsWith('.msi')) score += 15;
+        if (lower.includes('setup') || lower.endsWith('.msi')) score += 20;
+        if (lower.endsWith('.zip')) score += 12;
         if (lower.includes('x64') || lower.includes('win64')) score += 10;
         if (lower.includes('arm64')) score -= 5;
         if (lower.includes('debug') || lower.includes('symbols')) score -= 20;
@@ -106,7 +136,7 @@ function sanitizeUpdateFileName(value) {
 
 function getUpdateDownloadPath(updateInfo) {
     const directName = sanitizeUpdateFileName(updateInfo?.latestFile || '');
-    if (directName && (isWindowsInstallerAsset(directName) || isPortableExecutable(directName))) {
+    if (directName && (isWindowsInstallerAsset(directName) || isPortableExecutable(directName) || isArchivePackage(directName))) {
         return path.join(getLocalUpdateFolder(), directName);
     }
 
@@ -114,7 +144,7 @@ function getUpdateDownloadPath(updateInfo) {
         try {
             const parsed = new URL(updateInfo.downloadUrl);
             const urlName = sanitizeUpdateFileName(parsed.pathname.split('/').pop() || '');
-            if (urlName && (isWindowsInstallerAsset(urlName) || isPortableExecutable(urlName))) {
+            if (urlName && (isWindowsInstallerAsset(urlName) || isPortableExecutable(urlName) || isArchivePackage(urlName))) {
                 return path.join(getLocalUpdateFolder(), urlName);
             }
         } catch {
@@ -166,6 +196,8 @@ async function launchDetachedUpdaterScript({ mode, appPath, installerPath, backu
     const safeInstallerPath = escapeForBatch(installerPath);
     const safeBackupPath = escapeForBatch(backupPath || `${appPath}.backup`);
     const safeScriptPath = escapeForBatch(scriptPath);
+    const safeAppDir = escapeForBatch(path.dirname(appPath));
+    const safeAppExeName = escapeForBatch(path.basename(appPath));
 
     const lines = [
         '@echo off',
@@ -173,6 +205,8 @@ async function launchDetachedUpdaterScript({ mode, appPath, installerPath, backu
         'title CalibreViewer Updater',
         `set "APP_PID=${pid}"`,
         `set "APP_EXE=${safeAppPath}"`,
+        `set "APP_DIR=${safeAppDir}"`,
+        `set "APP_EXE_NAME=${safeAppExeName}"`,
         `set "UPDATE_FILE=${safeInstallerPath}"`,
         `set "BACKUP_EXE=${safeBackupPath}"`,
         'echo ========================================',
@@ -211,6 +245,52 @@ async function launchDetachedUpdaterScript({ mode, appPath, installerPath, backu
             'echo Done.',
             'timeout /t 2 /nobreak >nul'
         );
+    } else if (mode === 'archive') {
+        lines.push(
+            'echo Applying package update...',
+            'if not exist "%UPDATE_FILE%" (',
+            '  echo ERROR: Update package not found: %UPDATE_FILE%',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'set "WORK_DIR=%TEMP%\\calibreviewer-update-%RANDOM%%RANDOM%"',
+            'if exist "%WORK_DIR%" rmdir /S /Q "%WORK_DIR%" >nul 2>&1',
+            'mkdir "%WORK_DIR%" >nul 2>&1',
+            "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Expand-Archive -LiteralPath '%UPDATE_FILE%' -DestinationPath '%WORK_DIR%' -Force\"",
+            'if errorlevel 1 (',
+            '  echo ERROR: Failed to extract update package.',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'set "SRC_DIR="',
+            'if exist "%WORK_DIR%\\%APP_EXE_NAME%" set "SRC_DIR=%WORK_DIR%"',
+            'if not defined SRC_DIR (',
+            '  for /D %%D in ("%WORK_DIR%\\*") do (',
+            '    if exist "%%~fD\\%APP_EXE_NAME%" (',
+            '      set "SRC_DIR=%%~fD"',
+            '      goto found_src_dir',
+            '    )',
+            '  )',
+            ')',
+            ':found_src_dir',
+            'if not defined SRC_DIR (',
+            '  echo ERROR: Could not find %APP_EXE_NAME% inside update package.',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'echo Copying updated files...',
+            'robocopy "%SRC_DIR%" "%APP_DIR%" /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP >nul',
+            'if errorlevel 8 (',
+            '  echo ERROR: Failed to copy updated files into app directory.',
+            '  pause',
+            '  exit /b 1',
+            ')',
+            'echo Update applied successfully.',
+            'echo Restarting CalibreViewer...',
+            'start "" "%APP_EXE%"',
+            'if exist "%WORK_DIR%" rmdir /S /Q "%WORK_DIR%" >nul 2>&1',
+            'timeout /t 2 /nobreak >nul'
+        );
     } else {
         lines.push(
             'echo Launching installer...',
@@ -236,8 +316,8 @@ async function launchDetachedUpdaterScript({ mode, appPath, installerPath, backu
     }).unref();
 }
 
-async function launchUpdateInstaller(installerPath, isPortableUpdate = false) {
-    if (isPortableUpdate) {
+async function launchUpdateInstaller(installerPath, updateMode = 'installer') {
+    if (updateMode === 'portable') {
         const appPath = app.getPath('exe');
         const backupPath = `${appPath}.backup`;
 
@@ -257,6 +337,31 @@ async function launchUpdateInstaller(installerPath, isPortableUpdate = false) {
                 ok: true,
                 started: true,
                 message: 'Starting updater terminal. CalibreViewer will close and relaunch after update.'
+            };
+        } catch (error) {
+            quitting = false;
+            throw error;
+        }
+    } else if (updateMode === 'archive') {
+        try {
+            const appPath = app.getPath('exe');
+            await launchDetachedUpdaterScript({
+                mode: 'archive',
+                appPath,
+                installerPath,
+                backupPath: `${appPath}.backup`
+            });
+
+            quitting = true;
+            BrowserWindow.getAllWindows().forEach(win => win.close());
+            setImmediate(() => {
+                app.quit();
+            });
+
+            return {
+                ok: true,
+                started: true,
+                message: 'Starting updater terminal. CalibreViewer will close, update files, and relaunch.'
             };
         } catch (error) {
             quitting = false;
@@ -296,15 +401,19 @@ async function promptAndInstallUpdate(updateInfo) {
     const latestFile = updateInfo?.latestFile || '';
     const isLocalInstaller = Boolean(updateInfo?.checkedFolder && latestFile && isWindowsInstallerAsset(latestFile));
     const isLocalPortable = Boolean(updateInfo?.checkedFolder && latestFile && isPortableExecutable(latestFile));
+    const isLocalArchive = Boolean(updateInfo?.checkedFolder && latestFile && isArchivePackage(latestFile));
     const hasDirectInstaller = isLocalInstaller || isWindowsInstallerAsset(updateInfo?.downloadUrl || '') || isWindowsInstallerAsset(latestFile);
     const hasPortable = isLocalPortable || isPortableExecutable(updateInfo?.downloadUrl || '') || isPortableExecutable(latestFile);
-    
-    const isPortableUpdate = hasPortable && !hasDirectInstaller;
+    const hasArchive = isLocalArchive || isArchivePackage(updateInfo?.downloadUrl || '') || isArchivePackage(latestFile);
 
-    if (!hasDirectInstaller && !hasPortable) {
+    const updateMode = hasArchive
+        ? 'archive'
+        : (hasPortable && !hasDirectInstaller ? 'portable' : 'installer');
+
+    if (!hasDirectInstaller && !hasPortable && !hasArchive) {
         return {
             ok: false,
-            message: 'No installable package was found for this update source.'
+            message: 'No installable package was found for this update source (.zip/.exe/.msi).'
         };
     }
 
@@ -328,7 +437,7 @@ async function promptAndInstallUpdate(updateInfo) {
 
     let installerPath = '';
 
-    if (isLocalInstaller || isLocalPortable) {
+    if (isLocalInstaller || isLocalPortable || isLocalArchive) {
         installerPath = path.join(updateInfo.checkedFolder, latestFile);
         if (!fs.existsSync(installerPath)) {
             throw new Error('The local update file could not be found.');
@@ -345,7 +454,7 @@ async function promptAndInstallUpdate(updateInfo) {
         }
     }
 
-    await launchUpdateInstaller(installerPath, isPortableUpdate);
+    await launchUpdateInstaller(installerPath, updateMode);
 
     return {
         ok: true,
@@ -613,10 +722,22 @@ function findLatestLocalUpdate(folderPath) {
             const version = extractVersionFromName(name);
             const parsed = parseVersion(version);
             if (!parsed) return null;
-            return { name, version, parsed };
+            return {
+                name,
+                version,
+                parsed,
+                isArchive: isArchivePackage(name)
+            };
         })
         .filter(Boolean)
-        .sort((a, b) => compareVersions(b.parsed, a.parsed));
+        .sort((a, b) => {
+            const versionDiff = compareVersions(b.parsed, a.parsed);
+            if (versionDiff !== 0) return versionDiff;
+
+            // For same-version candidates, prefer ZIP package updates.
+            if (a.isArchive !== b.isArchive) return a.isArchive ? -1 : 1;
+            return 0;
+        });
 
     if (!candidates.length) {
         return { found: false, candidates: 0, latestVersion: null, latestFile: null };
@@ -724,14 +845,20 @@ function registerDesktopIpc() {
             const remote = await fetchGithubUpdateInfo(repo);
             const latestParsed = parseVersion(remote.latestVersion);
             const updateAvailable = !!(latestParsed && currentParsed && compareVersions(latestParsed, currentParsed) > 0);
-            const hasInstallableAsset = isWindowsInstallerAsset(remote.latestFile || '') || isPortableExecutable(remote.latestFile || '') || isWindowsInstallerAsset(remote.downloadUrl || '') || isPortableExecutable(remote.downloadUrl || '');
+            const hasInstallableAsset =
+                isWindowsInstallerAsset(remote.latestFile || '') ||
+                isPortableExecutable(remote.latestFile || '') ||
+                isArchivePackage(remote.latestFile || '') ||
+                isWindowsInstallerAsset(remote.downloadUrl || '') ||
+                isPortableExecutable(remote.downloadUrl || '') ||
+                isArchivePackage(remote.downloadUrl || '');
 
             let message = updateAvailable
                 ? `Update available: v${remote.latestVersion}${remote.latestFile ? ` (${remote.latestFile})` : ''}`
                 : `You are up to date (v${currentVersion}). Latest on GitHub is v${remote.latestVersion}.`;
 
             if (updateAvailable && !hasInstallableAsset) {
-                message = `Update v${remote.latestVersion} was found, but no Windows installer asset (.exe/.msi) is attached to that release.`;
+                message = `Update v${remote.latestVersion} was found, but no Windows update asset (.zip/.exe/.msi) is attached to that release.`;
             }
 
             return {
