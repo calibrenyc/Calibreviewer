@@ -282,6 +282,9 @@ class App {
         this.keyboardNavSectionIndex = 0;
         this.keyboardNavItemIndex = 0;
         this.keyboardNavSections = [];
+        this.pageMenuToggle = null;
+        this.pageMenu = null;
+        this.pageMenuOverlay = null;
         this.handleKeyboardOnlyNavigation = this.handleKeyboardOnlyNavigation.bind(this);
         this.syncKeyboardOnlyModeFromEvent = this.syncKeyboardOnlyModeFromEvent.bind(this);
 
@@ -319,32 +322,7 @@ class App {
 
         this.installKeyboardOnlyNavigation();
 
-        // Mobile menu toggle
-        const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
-        const navbarMenu = document.getElementById('navbar-menu');
-
-        if (mobileMenuToggle && navbarMenu) {
-            mobileMenuToggle.addEventListener('click', () => {
-                mobileMenuToggle.classList.toggle('active');
-                navbarMenu.classList.toggle('active');
-            });
-
-            // Close menu when a nav link is clicked
-            document.querySelectorAll('.nav-link').forEach(link => {
-                link.addEventListener('click', () => {
-                    mobileMenuToggle.classList.remove('active');
-                    navbarMenu.classList.remove('active');
-                });
-            });
-
-            // Close menu when clicking outside
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.navbar')) {
-                    mobileMenuToggle.classList.remove('active');
-                    navbarMenu.classList.remove('active');
-                }
-            });
-        }
+        this.initPageMenu();
 
         // Channel drawer toggle (mobile)
         const channelToggleBtn = document.getElementById('channel-toggle-btn');
@@ -400,6 +378,7 @@ class App {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 this.navigateTo(link.dataset.page);
+                this.closePageMenu();
             });
         });
 
@@ -447,7 +426,7 @@ class App {
 
         // Navigate to the page from URL hash, or default to home
         const hash = window.location.hash.slice(1); // Remove #
-        const initialPage = hash && this.pages[hash] ? hash : 'welcome';
+        const initialPage = hash && this.pages[hash] ? hash : 'home';
         this.navigateTo(initialPage, true); // true = replace history (don't add)
 
         this.startDiagnosticsHeartbeat();
@@ -767,6 +746,71 @@ class App {
         navbar.appendChild(logoutLink);
     }
 
+    getPageDisplayName(pageName) {
+        const names = {
+            welcome: 'Welcome',
+            home: 'Home',
+            live: 'Live TV',
+            guide: 'TV Guide',
+            movies: 'Movies',
+            series: 'Series',
+            settings: 'Settings',
+            watch: 'Now Playing'
+        };
+
+        return names[pageName] || 'Home';
+    }
+
+    initPageMenu() {
+        this.pageMenuToggle = document.getElementById('page-menu-toggle');
+        this.pageMenu = document.getElementById('navbar-menu');
+        this.pageMenuOverlay = document.getElementById('nav-sidebar-overlay');
+
+        if (!this.pageMenuToggle || !this.pageMenu || !this.pageMenuOverlay) return;
+
+        this.pageMenuToggle.addEventListener('click', (event) => {
+            event.preventDefault();
+            this.togglePageMenu();
+        });
+
+        this.pageMenuOverlay.addEventListener('click', () => this.closePageMenu());
+
+        document.addEventListener('click', (event) => {
+            if (!this.pageMenu.classList.contains('active')) return;
+            if (event.target.closest('#navbar-menu') || event.target.closest('#page-menu-toggle')) return;
+            this.closePageMenu();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && this.pageMenu.classList.contains('active')) {
+                this.closePageMenu();
+            }
+        });
+    }
+
+    togglePageMenu() {
+        if (!this.pageMenu) return;
+        if (this.pageMenu.classList.contains('active')) {
+            this.closePageMenu();
+            return;
+        }
+        this.openPageMenu();
+    }
+
+    openPageMenu() {
+        if (!this.pageMenu || !this.pageMenuToggle || !this.pageMenuOverlay) return;
+        this.pageMenu.classList.add('active');
+        this.pageMenuOverlay.classList.add('active');
+        this.pageMenuToggle.setAttribute('aria-expanded', 'true');
+    }
+
+    closePageMenu() {
+        if (!this.pageMenu || !this.pageMenuToggle || !this.pageMenuOverlay) return;
+        this.pageMenu.classList.remove('active');
+        this.pageMenuOverlay.classList.remove('active');
+        this.pageMenuToggle.setAttribute('aria-expanded', 'false');
+    }
+
     navigateTo(pageName, replaceHistory = false) {
         // Don't navigate if already on this page
         if (this.currentPage === pageName && !replaceHistory) {
@@ -787,6 +831,11 @@ class App {
             link.classList.toggle('active', link.dataset.page === pageName);
         });
 
+        const currentPageLabel = document.getElementById('current-page-label');
+        if (currentPageLabel) {
+            currentPageLabel.textContent = this.getPageDisplayName(pageName);
+        }
+
         // Update pages
         document.querySelectorAll('.page').forEach(page => {
             page.classList.toggle('active', page.id === `page-${pageName}`);
@@ -802,6 +851,8 @@ class App {
         if (this.pages[pageName]?.show) {
             this.pages[pageName].show();
         }
+
+        this.closePageMenu();
 
         this.sendDiagnosticsHeartbeat({ immediate: true }).catch(() => {
             // ignore diagnostics heartbeat failures

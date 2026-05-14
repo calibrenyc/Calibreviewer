@@ -33,7 +33,7 @@ class HomePage {
             <div class="dashboard-content" id="home-content">
                 <section class="dashboard-section" id="favorite-channels-section">
                     <div class="section-header">
-                        <h2>Favorite Channels</h2>
+                        <h2>Your Favorites</h2>
                     </div>
                     <div class="scroll-wrapper">
                         <button class="scroll-arrow scroll-left" aria-label="Scroll left">
@@ -42,7 +42,27 @@ class HomePage {
                         <div class="horizontal-scroll channel-tiles" id="favorite-channels-list">
                             <div class="loading-state">
                                 <div class="loading"></div>
-                                <span>Loading favorites...</span>
+                                <span>Loading your favorites...</span>
+                            </div>
+                        </div>
+                        <button class="scroll-arrow scroll-right" aria-label="Scroll right">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                        </button>
+                    </div>
+                </section>
+
+                <section class="dashboard-section" id="recent-movies-section">
+                    <div class="section-header">
+                        <h2>New Movies Added</h2>
+                    </div>
+                    <div class="scroll-wrapper">
+                        <button class="scroll-arrow scroll-left" aria-label="Scroll left">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                        </button>
+                        <div class="horizontal-scroll" id="recent-movies-list">
+                            <div class="loading-state">
+                                <div class="loading"></div>
+                                <span>Loading new movies...</span>
                             </div>
                         </div>
                         <button class="scroll-arrow scroll-right" aria-label="Scroll right">
@@ -62,47 +82,7 @@ class HomePage {
                         <div class="horizontal-scroll" id="continue-watching-list">
                             <div class="loading-state">
                                 <div class="loading"></div>
-                                <span>Loading history...</span>
-                            </div>
-                        </div>
-                        <button class="scroll-arrow scroll-right" aria-label="Scroll right">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-                        </button>
-                    </div>
-                </section>
-
-                <section class="dashboard-section">
-                    <div class="section-header">
-                        <h2>Recently Added Movies</h2>
-                    </div>
-                    <div class="scroll-wrapper">
-                        <button class="scroll-arrow scroll-left" aria-label="Scroll left">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-                        </button>
-                        <div class="horizontal-scroll" id="recent-movies-list">
-                            <div class="loading-state">
-                                <div class="loading"></div>
-                                <span>Loading recently added...</span>
-                            </div>
-                        </div>
-                        <button class="scroll-arrow scroll-right" aria-label="Scroll right">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
-                        </button>
-                    </div>
-                </section>
-
-                <section class="dashboard-section">
-                    <div class="section-header">
-                        <h2>Recently Added Series</h2>
-                    </div>
-                    <div class="scroll-wrapper">
-                        <button class="scroll-arrow scroll-left" aria-label="Scroll left">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
-                        </button>
-                        <div class="horizontal-scroll" id="recent-series-list">
-                            <div class="loading-state">
-                                <div class="loading"></div>
-                                <span>Loading recently added...</span>
+                                <span>Loading continue watching...</span>
                             </div>
                         </div>
                         <button class="scroll-arrow scroll-right" aria-label="Scroll right">
@@ -173,15 +153,16 @@ class HomePage {
             // 0. Load Favorite Channels (first section)
             await this.renderFavoriteChannels();
 
-            // 1. Load Watch History
+            // 1. Load Recently Added Movies
+            await this.renderRecentMovies();
+
+            // 2. Load Watch History (series progress naturally appears here)
             const history = await window.API.request('GET', '/history?limit=12');
             if (history && Array.isArray(history)) {
                 this.renderHistory(history);
+            } else {
+                this.renderHistory([]);
             }
-
-            // 2. Load Recent Items
-            this.renderRecentMovies();
-            this.renderRecentSeries();
 
         } catch (err) {
             console.error('[Dashboard] Error loading data:', err);
@@ -297,18 +278,27 @@ class HomePage {
         if (!list || !section) return;
 
         if (items.length === 0) {
-            section.classList.add('hidden');
+            section.classList.remove('hidden');
+            list.innerHTML = '<div class="empty-state hint">Start a movie or series to keep watching from where you left off</div>';
             return;
         }
 
         section.classList.remove('hidden');
-        list.innerHTML = items.map(item => this.createCard(item)).join('');
+        const prioritized = [...items].sort((a, b) => {
+            const aType = String(a.item_type || a.type || '').toLowerCase();
+            const bType = String(b.item_type || b.type || '').toLowerCase();
+            const aSeriesScore = (aType === 'series' || aType === 'episode') ? 1 : 0;
+            const bSeriesScore = (bType === 'series' || bType === 'episode') ? 1 : 0;
+            return bSeriesScore - aSeriesScore;
+        });
+
+        list.innerHTML = prioritized.map(item => this.createCard(item)).join('');
 
         // Attach click listeners
         list.querySelectorAll('.dashboard-card').forEach(card => {
             card.addEventListener('click', () => {
                 const id = card.dataset.id;
-                const item = items.find(i => i.item_id === id);
+                    const item = prioritized.find(i => i.item_id === id);
                 if (item) {
                     const type = item.item_type || item.type;
 
@@ -373,35 +363,6 @@ class HomePage {
             this.updateScrollArrows();
         } catch (err) {
             console.error('[Dashboard] Error loading recent movies:', err);
-        }
-    }
-
-    async renderRecentSeries() {
-        const list = document.getElementById('recent-series-list');
-        if (!list) return;
-
-        try {
-            const series = await window.API.request('GET', '/channels/recent?type=series&limit=12');
-            if (!series || series.length === 0) {
-                list.innerHTML = '<div class="empty-state hint">No recently added series found</div>';
-                return;
-            }
-
-            list.innerHTML = series.map(item => this.createRecentCard(item)).join('');
-
-            // Attach listeners
-            list.querySelectorAll('.dashboard-card').forEach(card => {
-                card.addEventListener('click', () => {
-                    const id = card.dataset.id;
-                    const item = series.find(s => s.item_id === id);
-                    if (item) this.navigateToSeries(item);
-                });
-            });
-
-            // Update scroll arrows after content renders
-            this.updateScrollArrows();
-        } catch (err) {
-            console.error('[Dashboard] Error loading recent series:', err);
         }
     }
 
