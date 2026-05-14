@@ -11,23 +11,23 @@ const REMEMBER_ME_KEY = 'rememberLoginEnabled';
 const LAST_LOGIN_USER_KEY = 'lastLoginUser';
 
 const DEFAULT_THEME_COLORS = {
-    '--color-bg-primary': '#0a0a0f',
-    '--color-bg-secondary': '#12121a',
-    '--color-bg-tertiary': '#1a1a25',
-    '--color-bg-hover': '#22222f',
-    '--color-bg-active': '#2a2a3a',
-    '--color-accent': '#6366f1',
-    '--color-accent-hover': '#818cf8',
-    '--color-welcome-1': '#6366f1',
-    '--color-welcome-2': '#818cf8',
-    '--color-success': '#10b981',
-    '--color-warning': '#f59e0b',
-    '--color-error': '#ef4444',
-    '--color-text-primary': '#f1f1f5',
-    '--color-text-secondary': '#a1a1aa',
-    '--color-text-muted': '#71717a',
-    '--color-border': '#27272a',
-    '--color-border-light': '#3f3f46'
+    '--color-bg-primary': '#0b0c10',
+    '--color-bg-secondary': '#12141a',
+    '--color-bg-tertiary': '#1a1d24',
+    '--color-bg-hover': '#232833',
+    '--color-bg-active': '#2d3441',
+    '--color-accent': '#0a84ff',
+    '--color-accent-hover': '#409cff',
+    '--color-welcome-1': '#0a84ff',
+    '--color-welcome-2': '#64d2ff',
+    '--color-success': '#30d158',
+    '--color-warning': '#ffd60a',
+    '--color-error': '#ff453a',
+    '--color-text-primary': '#f5f5f7',
+    '--color-text-secondary': '#c7c7cc',
+    '--color-text-muted': '#8e8e93',
+    '--color-border': '#2c313d',
+    '--color-border-light': '#3d4454'
 };
 
 function normalizeHexColor(value) {
