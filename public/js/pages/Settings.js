@@ -175,6 +175,10 @@ class SettingsPage {
             return /\.(exe|msi)(?:$|[?#])/i.test(candidate);
         };
 
+        const hasUpdateAvailable = (...results) => {
+            return results.some(result => Boolean(result?.updateAvailable));
+        };
+
         const setStatus = (message, isError = false) => {
             statusEl.textContent = message;
             statusEl.style.color = isError ? 'var(--color-error)' : '';
@@ -298,7 +302,11 @@ class SettingsPage {
                 }
 
                 if (!canAutoInstall(result) && !canAutoInstall(localResult)) {
-                    setStatus('No installable update package was found. The app only supports automatic installer updates.', true);
+                    if (hasUpdateAvailable(result, localResult)) {
+                        setStatus('An update was found, but no Windows installer package (.exe/.msi) is attached to it.', true);
+                    } else {
+                        setStatus(result?.message || localResult?.message || 'You are up to date.');
+                    }
                     return;
                 }
 
