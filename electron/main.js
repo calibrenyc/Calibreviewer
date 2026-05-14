@@ -69,6 +69,35 @@ function isPortableExecutable(value) {
     return typeof value === 'string' && /\.exe(?:$|[?#])/i.test(value);
 }
 
+function selectPreferredWindowsAsset(assets) {
+    if (!Array.isArray(assets) || assets.length === 0) return null;
+
+    const installable = assets.filter(asset => {
+        const name = String(asset?.name || '');
+        return /\.(exe|msi)$/i.test(name);
+    });
+
+    if (!installable.length) return null;
+
+    const appNameLc = APP_NAME.toLowerCase();
+    const scored = installable.map(asset => {
+        const name = String(asset?.name || '');
+        const lower = name.toLowerCase();
+        let score = 0;
+
+        if (lower.includes(appNameLc)) score += 30;
+        if (lower.includes('setup') || lower.endsWith('.msi')) score += 15;
+        if (lower.includes('x64') || lower.includes('win64')) score += 10;
+        if (lower.includes('arm64')) score -= 5;
+        if (lower.includes('debug') || lower.includes('symbols')) score -= 20;
+        if (lower.includes('assist')) score -= 10;
+
+        return { asset, score };
+    }).sort((a, b) => b.score - a.score);
+
+    return scored[0].asset;
+}
+
 function sanitizeUpdateFileName(value) {
     if (typeof value !== 'string') return '';
     return path.basename(value).replace(/[<>:"/\\|?*]+/g, '_').trim();
@@ -380,16 +409,14 @@ async function fetchGithubUpdateInfo(repo) {
         const parsed = parseVersion(latestVersion);
         if (!parsed) return null;
 
-        const windowsAsset = Array.isArray(payload.assets)
-            ? payload.assets.find(asset => /\.(exe|msi)$/i.test(asset?.name || ''))
-            : null;
+        const windowsAsset = selectPreferredWindowsAsset(payload.assets);
 
         return {
             parsed,
             latestVersion,
             latestTag: payload.tag_name || `v${latestVersion}`,
             latestFile: windowsAsset?.name || null,
-            downloadUrl: windowsAsset?.browser_download_url || payload.html_url || null,
+            downloadUrl: windowsAsset?.browser_download_url || null,
             releaseUrl: payload.html_url || null
         };
     };
@@ -417,9 +444,18 @@ async function fetchGithubUpdateInfo(repo) {
             .filter(Boolean)
             .sort((a, b) => compareVersions(b.parsed, a.parsed));
 
-        if (candidates.length) {
+        const installerCandidates = candidates.filter(candidate => Boolean(candidate.downloadUrl));
+
+        if (installerCandidates.length) {
             return {
                 source: 'release-list',
+                ...installerCandidates[0]
+            };
+        }
+
+        if (candidates.length) {
+            return {
+                source: 'release-list-no-installer',
                 ...candidates[0]
             };
         }
@@ -602,6 +638,15 @@ function registerDesktopIpc() {
             const remote = await fetchGithubUpdateInfo(repo);
             const latestParsed = parseVersion(remote.latestVersion);
             const updateAvailable = !!(latestParsed && currentParsed && compareVersions(latestParsed, currentParsed) > 0);
+            const hasInstallableAsset = isWindowsInstallerAsset(remote.latestFile || '') || isPortableExecutable(remote.latestFile || '') || isWindowsInstallerAsset(remote.downloadUrl || '') || isPortableExecutable(remote.downloadUrl || '');
+
+            let message = updateAvailable
+                ? `Update available: v${remote.latestVersion}${remote.latestFile ? ` (${remote.latestFile})` : ''}`
+                : `You are up to date (v${currentVersion}). Latest on GitHub is v${remote.latestVersion}.`;
+
+            if (updateAvailable && !hasInstallableAsset) {
+                message = `Update v${remote.latestVersion} was found, but no Windows installer asset (.exe/.msi) is attached to that release.`;
+            }
 
             return {
                 source: remote.source,
@@ -613,9 +658,7 @@ function registerDesktopIpc() {
                 downloadUrl: remote.downloadUrl,
                 releaseUrl: remote.releaseUrl,
                 updateAvailable,
-                message: updateAvailable
-                    ? `Update available: v${remote.latestVersion}${remote.latestFile ? ` (${remote.latestFile})` : ''}`
-                    : `You are up to date (v${currentVersion}). Latest on GitHub is v${remote.latestVersion}.`
+                message
             };
         } catch (error) {
             const statusMessage = String(error?.message || 'Unknown error').includes('(404)')
