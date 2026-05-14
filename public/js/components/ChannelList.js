@@ -38,6 +38,14 @@ class ChannelList {
         return `${this.channelsCachePrefix}${sourceValue || 'all'}`;
     }
 
+    mergeUniqueById(existing, incoming) {
+        const map = new Map((existing || []).map(item => [String(item.id), item]));
+        for (const item of (incoming || [])) {
+            map.set(String(item.id), item);
+        }
+        return [...map.values()];
+    }
+
     restoreSourcesCache() {
         try {
             const cached = JSON.parse(localStorage.getItem(this.sourcesCacheKey) || 'null');
@@ -115,8 +123,8 @@ class ChannelList {
             const cached = JSON.parse(raw);
             if (!Array.isArray(cached?.channels)) return false;
 
-            this.channels = cached.channels;
-            this.groups = Array.isArray(cached.groups) ? cached.groups : [];
+            this.channels = this.mergeUniqueById([], cached.channels);
+            this.groups = this.mergeUniqueById([], Array.isArray(cached.groups) ? cached.groups : []);
             return this.channels.length > 0;
         } catch {
             return false;
@@ -924,6 +932,12 @@ class ChannelList {
             this.render();
         }
 
+        // Always rebuild from fresh API results.
+        // Cached data is only for immediate paint and must not be appended to,
+        // otherwise duplicates accumulate every refresh.
+        this.channels = [];
+        this.groups = [];
+
         try {
             if (!restoredFromCache) {
                 this.container.innerHTML = '<div class="loading"></div>';
@@ -972,7 +986,7 @@ class ChannelList {
             sourceType: 'xtream'
         }));
 
-        this.groups = this.groups.concat(categoryGroups);
+        this.groups = this.mergeUniqueById(this.groups, categoryGroups);
 
         // Map streams to channels
         const channelList = streams.map(stream => ({
@@ -988,7 +1002,7 @@ class ChannelList {
             sourceType: 'xtream'
         }));
 
-        this.channels = this.channels.concat(channelList);
+        this.channels = this.mergeUniqueById(this.channels, channelList);
     }
 
     /**
@@ -1013,7 +1027,7 @@ class ChannelList {
             sourceType: 'm3u'
         }));
 
-        this.groups = this.groups.concat(m3uGroups);
+        this.groups = this.mergeUniqueById(this.groups, m3uGroups);
 
         // Map streams to channels
         const channelList = streams.map(stream => ({
@@ -1029,7 +1043,7 @@ class ChannelList {
             sourceType: 'm3u'
         }));
 
-        this.channels = this.channels.concat(channelList);
+        this.channels = this.mergeUniqueById(this.channels, channelList);
     }
 
     /**
