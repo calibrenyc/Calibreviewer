@@ -33,6 +33,16 @@
   --color-border: #27272a;
   --color-border-light: #3f3f46;
 
+  /* Sidebar theme tokens (easy to customize in one place) */
+  --sidebar-bg-top: rgba(10, 12, 18, 0.97);
+  --sidebar-bg-bottom: rgba(8, 9, 14, 0.96);
+  --sidebar-blend-glow: rgba(12, 24, 44, 0.42);
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-active: #0a84ff;
+  --sidebar-active-border: rgba(10, 132, 255, 0.45);
+  --sidebar-active-bg-start: rgba(10, 132, 255, 0.22);
+  --sidebar-active-bg-end: rgba(10, 132, 255, 0.05);
+
   /* Glass effect */
   --glass-bg: rgba(18, 18, 26, 0.8);
   --glass-border: rgba(255, 255, 255, 0.1);
@@ -5494,9 +5504,9 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: calc(max(var(--safe-area-inset-top), 16px) + 16px) 14px max(var(--safe-area-inset-bottom), 16px);
-  background: linear-gradient(180deg, rgba(10, 12, 18, 0.97), rgba(8, 9, 14, 0.96));
+  background: linear-gradient(180deg, var(--sidebar-bg-top), var(--sidebar-bg-bottom));
   backdrop-filter: blur(22px) saturate(130%);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid var(--sidebar-border);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
   transform: translateX(-106%);
   opacity: 0;
@@ -5504,6 +5514,17 @@ body {
   pointer-events: none;
   transition: transform 220ms ease, opacity 220ms ease, visibility 220ms ease;
   z-index: 10000;
+}
+
+.navbar-menu::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: -42px;
+  width: 42px;
+  height: 100%;
+  background: linear-gradient(90deg, var(--sidebar-blend-glow), rgba(12, 24, 44, 0));
+  pointer-events: none;
 }
 
 .navbar-menu.active {
@@ -5521,8 +5542,9 @@ body {
 
 .nav-link.active {
   color: #ffffff;
-  border-color: rgba(10, 132, 255, 0.45);
-  background: linear-gradient(90deg, rgba(10, 132, 255, 0.22), rgba(10, 132, 255, 0.05));
+  border-color: var(--sidebar-active-border);
+  background: linear-gradient(90deg, var(--sidebar-active-bg-start), var(--sidebar-active-bg-end));
+  box-shadow: 0 0 30px color-mix(in srgb, var(--sidebar-active) 38%, transparent);
 }
 
 .nav-sidebar-overlay {
