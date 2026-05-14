@@ -820,6 +820,7 @@ class App {
 
     openPageMenu() {
         if (!this.pageMenu || !this.pageMenuToggle || !this.pageMenuOverlay) return;
+        document.body.classList.add('page-menu-open');
         this.pageMenu.classList.add('active');
         this.pageMenuOverlay.classList.add('active');
         this.pageMenuToggle.setAttribute('aria-expanded', 'true');
@@ -827,6 +828,7 @@ class App {
 
     closePageMenu() {
         if (!this.pageMenu || !this.pageMenuToggle || !this.pageMenuOverlay) return;
+        document.body.classList.remove('page-menu-open');
         this.pageMenu.classList.remove('active');
         this.pageMenuOverlay.classList.remove('active');
         this.pageMenuToggle.setAttribute('aria-expanded', 'false');

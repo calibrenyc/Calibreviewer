@@ -5553,6 +5553,18 @@ body.keyboard-only-mode .navbar-menu.active .nav-link * {
   pointer-events: auto;
 }
 
+body.page-menu-open #page-menu-toggle,
+body.page-menu-open #page-menu-toggle *,
+body.page-menu-open #navbar-menu,
+body.page-menu-open #navbar-menu *,
+body.page-menu-open #nav-sidebar-overlay {
+  pointer-events: auto !important;
+}
+
+body.page-menu-open #navbar-menu .nav-link {
+  cursor: pointer;
+}
+
 .mobile-menu-toggle {
   display: none;
 }
